@@ -8,7 +8,7 @@ on:
 
 jobs:
   build-linux-64:
-    name: Linux (x86_64) AppImage Build
+    name: Linux x86_64 Build
     runs-on: ubuntu-22.04
     steps:
       - name: Check out repository

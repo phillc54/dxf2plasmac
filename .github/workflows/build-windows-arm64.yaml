@@ -1,4 +1,4 @@
-name: Installer Packages Build
+name: Build Windows-arm64
 
 on:
   workflow_dispatch:
@@ -7,8 +7,8 @@ on:
       - 'v*'
 
 jobs:
-  build-windows:
-    name: Windows (${{ matrix.arch }}) Build
+  build-windows-arm64:
+    name: Windows arm64 Build
     runs-on: windows-11-arm
 
     steps:

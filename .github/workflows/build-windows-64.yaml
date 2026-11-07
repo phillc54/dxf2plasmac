@@ -1,4 +1,4 @@
-name: Installer Packages Build
+name: Build Windows-64
 
 on:
   workflow_dispatch:

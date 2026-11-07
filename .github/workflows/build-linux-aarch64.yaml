@@ -8,7 +8,7 @@ on:
 
 jobs:
   build-linux-aarch64:
-    name: Linux (aarch64 ARM) AppImage Build
+    name: Linux aarch64 Build
     runs-on: ubuntu-22.04
     steps:
       - name: Check out repository
