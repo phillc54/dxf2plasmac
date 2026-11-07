@@ -6,7 +6,7 @@ import ctkmessagebox2
 
 block_cipher = None
 
-root = ''#os.getcwd()
+root = os.getcwd()
 main_script = os.path.join(root, 'src', 'dxf2plasmac', 'main.py')
 assets = os.path.join(root, 'src', 'dxf2plasmac', 'assets')
 app_icon = os.path.join(assets, 'dxf2plasmac.icns')

@@ -30,7 +30,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Build App Folder with PyInstaller
-        run: pyinstaller build_scripts/main.spec
+        run: pyinstaller src/dxf2plasmac/main.spec
 
       - name: Compile Inno Setup Installer
         run: iscc installer.iss
