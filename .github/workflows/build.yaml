@@ -54,6 +54,12 @@ jobs:
         #   # pyinstaller --clean --noconfirm your-script.spec
         run: pyinstaller src/dxf2plasmac/main.spec
 
+
+      - name: Print resulting directory structure
+        run: |
+          echo "=== Using find ==="
+          find dist -print
+
       - name: Rename or Package Output
         shell: pwsh
         run: |
