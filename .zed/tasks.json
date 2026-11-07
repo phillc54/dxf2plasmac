@@ -1,0 +1,8 @@
+[
+  {
+    "label": "Start Python Script",
+    "command": "pixi",
+    "args": ["run", "start"],
+    "save" : "current"
+  }
+]

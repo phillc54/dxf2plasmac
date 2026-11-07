@@ -1,0 +1,27 @@
+[workspace]
+authors = ["phillc54 <phillc54@icloud.com>"]
+channels = ["conda-forge"]
+name = "dxf2plasmac"
+platforms = ["osx-arm64", "linux-64", "linux-aarch64", "win-64", "win-arm64"]
+
+version = "0.1.0"
+
+[tasks]
+start = "python3 src/dxf2plasmac/main.py"
+build-mac = "pyinstaller build_scripts/dxf2plasmac_mac.spec --clean --noconfirm"
+test = "python3 build_scripts/main.spec"
+
+[dependencies]
+python = ">=3.14.7,<3.15"
+pillow = ">=13.0.0,<14"
+pyinstaller = ">=6.22.3,<7"
+
+[pypi-dependencies]
+ezdxf = ">=1.4.4, <2"
+shapely = ">=2.2.0, <3"
+customtkinter = ">=6.0.0, <7"
+ctkcolorpicker = ">=0.9.0, <0.10"
+ctkmessagebox2 = ">=0.3.4, <0.4"
+
+
+# python, pillow, pyinstaller, ezdxf, shapely, customtkinter, ctkcolorpicker, and ctkmessagebox2

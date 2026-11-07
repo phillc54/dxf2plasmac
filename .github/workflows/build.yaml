@@ -1,0 +1,216 @@
+name: Production Multi-Architecture Installer Packages Build
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-windows:
+    name: Windows (${{ matrix.arch }}) Build
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        arch: [x86, x64, arm64] # Compiles separate architecture binaries
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+          architecture: ${{ matrix.arch }} # Python cross-compiles Windows binaries based on architecture flag
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Build App Folder with PyInstaller
+        run: pyinstaller build_scripts/main.spec
+
+      - name: Compile Inno Setup Installer
+        run: iscc installer.iss
+        # Note: To fully lock down the ARM64 MSI installer layer, you can create a second
+        # installer.iss file using 'ArchitecturesAllowed=arm64' if desired.
+
+      - name: Upload Installer Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-${{ matrix.arch }}-installer
+          path: dist/dxf2PlasmaC-Setup.exe
+
+  build-macos:
+    name: macOS (ARM64) Build
+    runs-on: macos-latest # GitHub macOS runners natively execute on M-series Apple Silicon ARM architecture
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          brew install create-dmg
+
+      - name: Build App Bundle with PyInstaller
+        env:
+          MACOS_ARCH: arm64
+        run: pyinstaller build_scripts/main.spec
+
+      - name: Create DMG Disk Image
+        run: |
+          create-dmg \
+            --volname "dxf2PlasmaC Installation" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --icon "dxf2PlasmaC.app" 175 190 \
+            --app-drop-link 425 190 \
+            "dist/dxf2PlasmaC-Mac-ARM64.dmg" \
+            "dist/dxf2PlasmaC.app"
+
+      - name: Upload DMG Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64-dmg
+          path: dist/dxf2PlasmaC-Mac-ARM64.dmg
+
+  build-linux-x86:
+    name: Linux (x86_64) AppImage Build
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+          cache: 'pip'
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-tk libfuse2
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Build App with PyInstaller
+        run: pyinstaller build_scripts/main.spec
+
+      - name: Structure AppDir for AppImage Packaging
+        run: |
+          mkdir -p AppDir/usr/bin
+          mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+          cp -r dist/dxf2PlasmaC/* AppDir/usr/bin/
+          cp my-app.desktop AppDir/
+          ln -s usr/bin/dxf2PlasmaC AppDir/AppRun
+          cp assets/app_icon.png AppDir/usr/share/icons/hicolor/256x256/apps/app_icon.png
+          cp assets/app_icon.png AppDir/.DirIcon
+
+      - name: Download appimagetool and Build Package
+        run: |
+          wget -q https://github.com
+          chmod +x appimagetool-x86_64.AppImage
+          export ARCH=x86_64
+          ./appimagetool-x86_64.AppImage AppDir dxf2PlasmaC-Linux-x86_64.AppImage
+
+      - name: Upload AppImage Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-x86_64-appimage
+          path: dxf2PlasmaC-Linux-x86_64.AppImage
+
+  build-linux-arm:
+    name: Linux (aarch64 ARM) AppImage Build
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU Hardware Emulation
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Execute ARM Execution Container Matrix Build
+        uses: uraimo/run-on-arch-action@v2
+        with:
+          arch: aarch64
+          distro: ubuntu22.04
+          githubToken: ${{ github.token }}
+          setup: |
+            mkdir -p "${PWD}/artifacts"
+          dockerRunArgs: |
+            --volume "${PWD}/artifacts:/artifacts"
+          run: |
+            # 1. Install internal emulator runtime frameworks
+            apt-get update && apt-get install -y python3-pip python3-tk wget binutils libfuse2 file git
+
+            # 2. Package App Payload Dependencies
+            python3 -m pip install --upgrade pip
+            pip3 install customtkinter pyinstaller Pillow
+
+            # 3. Compile PyInstaller
+            pyinstaller build_scripts/main.spec
+
+            # 4. Generate Linux AppDir Build Structure
+            mkdir -p AppDir/usr/bin
+            mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+            cp -r dist/dxf2PlasmaC/* AppDir/usr/bin/
+            cp my-app.desktop AppDir/
+            ln -s usr/bin/dxf2PlasmaC AppDir/AppRun
+            cp assets/app_icon.png AppDir/usr/share/icons/hicolor/256x256/apps/app_icon.png
+            cp assets/app_icon.png AppDir/.DirIcon
+
+            # 5. Build ARM build via native architecture compiler binary link
+            wget -q https://github.com
+            chmod +x appimagetool-aarch64.AppImage
+
+            export ARCH=aarch64
+            ./appimagetool-aarch64.AppImage --appimage-extract-and-run AppDir dxf2PlasmaC-Linux-aarch64.AppImage
+            cp dxf2PlasmaC-Linux-aarch64.AppImage /artifacts/
+
+      - name: Upload ARM AppImage Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-aarch64-appimage
+          path: artifacts/dxf2PlasmaC-Linux-aarch64.AppImage
+
+  release:
+    name: Publish Production Unified Release Hub
+    needs: [build-windows, build-macos, build-linux-x86, build-linux-arm]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download All Pipeline Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: raw_artifacts
+
+      - name: Organize Deployment Architecture Manifest Files
+        run: |
+          mkdir production_release
+          # Rename and match artifacts systematically into a unified distribution bucket
+          cp raw_artifacts/windows-x64-installer/dxf2PlasmaC-Setup.exe production_release/dxf2PlasmaC-Windows-x64-Setup.exe
+          cp raw_artifacts/windows-arm64-installer/dxf2PlasmaC-Setup.exe production_release/dxf2PlasmaC-Windows-ARM64-Setup.exe
+          cp raw_artifacts/macos-arm64-dmg/dxf2PlasmaC-Mac-ARM64.dmg production_release/
+          cp raw_artifacts/linux-x86_64-appimage/dxf2PlasmaC-Linux-x86_64.AppImage production_release/
+          cp raw_artifacts/linux-aarch64-appimage/dxf2PlasmaC-Linux-aarch64.AppImage production_release/
+
+      - name: Publish Production GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: production_release/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

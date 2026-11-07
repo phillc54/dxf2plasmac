@@ -1,0 +1,23 @@
+{
+  "lsp": {
+    "basedpyright": {
+      "settings": {
+        "basedpyright.analysis": {
+          "autoSearchPaths": true,
+          "useLibraryCodeForTypes": true,
+          "extraPaths": ["/Volumes/CaseSensitiveHD/share/pixi/dxf2plasmac/.pixi/envs/default/lib/python3.14/site-packages"],
+        }
+      }
+    },
+    "pyright": {
+      "settings": {
+        "python.analysis": {
+          "autoSearchPaths": true,
+          "useLibraryCodeForTypes": true,
+          "extraPaths": ["/Volumes/CaseSensitiveHD/share/pixi/dxf2plasmac/.pixi/envs/default/lib/python3.14/site-packages"],
+
+        }
+      }
+    }
+  }
+}

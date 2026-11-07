@@ -1,0 +1,26 @@
+[tool.pyright]
+# ignore = ["dxf2plasmac.spec"]
+reportAny = false
+reportArgumentType = false
+reportAttributeAccessIssue = false
+reportCallIssue = false
+reportImplicitRelativeImport = false
+reportPrivateLocalImportUsage = false
+reportMissingParameterType = false
+reportMissingTypeStubs = false
+reportPrivateImportUsage = false
+reportUnannotatedClassAttribute = false
+reportUndefinedVariable = false
+reportUnknownArgumentType = false
+reportUnknownLambdaType = false
+reportUnknownMemberType = false
+reportUnknownParameterType = false
+reportUnknownVariableType = false
+reportUnusedCallResult = false
+
+[tool.ruff.lint]
+ignore = [#"PERF402",    # manual list copy
+          "BLE001",     # bare Exception
+          "DTZ005",     # call datetime without timezone
+          "F821",       # undefined name
+]

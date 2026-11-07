@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=MyCustomTkinterApp
+Exec=MyCustomTkinterApp
+Icon=dxf2plasmac
+Categories=Utility;
+Comment=My CustomTkinter Application
