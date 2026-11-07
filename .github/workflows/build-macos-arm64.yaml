@@ -56,13 +56,13 @@ jobs:
       - name: Download All Pipeline Artifacts
         uses: actions/download-artifact@v8
         with:
-          path: raw_artifacts
+          path: artifacts
 
       - name: Organize Deployment Architecture Manifest Files
         run: |
           mkdir release
           # Rename and match artifacts systematically into a unified distribution bucket
-          cp raw_artifacts/macos-arm64-dmg/dxf2PlasmaC-Mac-ARM64.dmg release/
+          cp artifacts/macos-arm64-dmg/dxf2PlasmaC-Mac-ARM64.dmg release/
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v3
