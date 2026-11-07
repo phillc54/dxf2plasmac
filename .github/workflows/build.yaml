@@ -14,42 +14,115 @@ on:
 permissions:
   contents: write   # required to create releases
 
+
 jobs:
-  build-windows:
-    name: Windows (${{ matrix.arch }}) Build
-    runs-on: windows-latest
+  build:
     strategy:
+      fail-fast: false
       matrix:
-        arch: [x64, arm64] # Compiles separate architecture binaries
+        include:
+          - os: windows-latest
+            arch: x64
+            runner_label: windows-latest
+          - os: windows-arm64
+            arch: arm64
+            # Use GitHub-hosted Windows ARM64 runner label (or your self-hosted ARM64 runner)
+            runner_label: windows-11-arm
+
+    runs-on: ${{ matrix.runner_label }}
+
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.14.10'
-          architecture: ${{ matrix.arch }} # Python cross-compiles Windows binaries based on architecture flag
-          cache: 'pip'
+          python-version: '3.12'
+          architecture: ${{ matrix.arch }}
 
-      - name: Install Dependencies
+      - name: Install Dependencies & PyInstaller
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          python -m pip install -r requirements.txt
+          # python -m pip install pyinstaller
 
-      - name: Build App Folder with PyInstaller
+      - name: Build with PyInstaller
+        # run: |
+        #   pyinstaller --clean --noconfirm --onefile your-script.py
+        #   # Or if using a spec file:
+        #   # pyinstaller --clean --noconfirm your-script.spec
         run: pyinstaller src/dxf2plasmac/main.spec
 
-      - name: Compile Inno Setup Installer
-        run: iscc installer.iss
-        # Note: To fully lock down the ARM64 MSI installer layer, you can create a second
-        # installer.iss file using 'ArchitecturesAllowed=arm64' if desired.
+      - name: Rename or Package Output
+        shell: pwsh
+        run: |
+          $exePath = "dist/your-script.exe"
+          $newName = "your-app-windows-${{ matrix.arch }}.exe"
+          Copy-Item $exePath -Destination "dist/$newName"
 
-      - name: Upload Installer Artifact
-        uses: actions/upload-artifact@v7
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
         with:
-          name: windows-${{ matrix.arch }}-installer
-          path: dist/dxf2PlasmaC-Setup.exe
+          name: app-windows-${{ matrix.arch }}
+          path: dist/your-app-windows-*.exe
+
+#   release:
+#     needs: build
+#     runs-on: ubuntu-latest
+#     if: startsWith(github.ref, 'refs/tags/v')
+#     steps:
+#       - name: Download all workflow artifacts
+#         uses: actions/download-artifact@v4
+#         with:
+#           path: artifacts
+#
+#       - name: Create GitHub Release
+#         uses: softprops/action-gh-release@v2
+#         with:
+#           files: |
+#             artifacts/app-windows-x64/*.exe
+#             artifacts/app-windows-arm64/*.exe
+#           generate_release_notes: true
+
+
+
+# jobs:
+#   build-windows:
+#     name: Windows (${{ matrix.arch }}) Build
+#     runs-on: windows-latest
+#     strategy:
+#       matrix:
+#         arch: [x64, arm64] # Compiles separate architecture binaries
+#     steps:
+#       - name: Check out repository
+#         uses: actions/checkout@v7
+#
+#       - name: Set up Python
+#         uses: actions/setup-python@v7
+#         with:
+#           python-version: '3.14.10'
+#           architecture: ${{ matrix.arch }} # Python cross-compiles Windows binaries based on architecture flag
+#           cache: 'pip'
+#
+#       - name: Install Dependencies
+#         run: |
+#           python -m pip install --upgrade pip
+#           pip install -r requirements.txt
+#
+#       - name: Build App Folder with PyInstaller
+#         run: pyinstaller src/dxf2plasmac/main.spec
+#
+#       - name: Compile Inno Setup Installer
+#         run: iscc installer.iss
+#         # Note: To fully lock down the ARM64 MSI installer layer, you can create a second
+#         # installer.iss file using 'ArchitecturesAllowed=arm64' if desired.
+#
+#       - name: Upload Installer Artifact
+#         uses: actions/upload-artifact@v7
+#         with:
+#           name: windows-${{ matrix.arch }}-installer
+#           path: dist/dxf2PlasmaC-Setup.exe
 
 #   build-macos:
 #     name: macOS (ARM64) Build
