@@ -43,7 +43,8 @@ jobs:
 
             # 2. Package App Payload Dependencies
             python3 -m pip install --upgrade pip
-            pip3 install customtkinter pyinstaller Pillow
+            # pip3 install customtkinter pyinstaller Pillow
+            pip3 install -r requirements.txt
 
             # 3. Compile PyInstaller
             pyinstaller src/dxf2plasmac/main.spec
