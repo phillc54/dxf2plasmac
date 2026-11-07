@@ -35,8 +35,6 @@ jobs:
 
       - name: Compile Inno Setup Installer
         run: iscc installer.iss
-        # Note: To fully lock down the ARM64 MSI installer layer, you can create a second
-        # installer.iss file using 'ArchitecturesAllowed=arm64' if desired.
 
       - name: Upload Installer Artifact
         uses: actions/upload-artifact@v7
@@ -44,7 +42,12 @@ jobs:
           name: windows-64-installer
           path: dist/dxf2PlasmaC-Setup.exe
 
-      - name: Create GitHub Release and Upload DMG
+  release:
+    name: Release
+    needs: [build-windows-64]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Publish Release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
