@@ -337,18 +337,16 @@ jobs:
           mkdir release
           cp artifacts/dxf2plasmac-windows-x64/dxf2PlasmaC-Setup.exe release/dxf2PlasmaC-Windows-x64-Setup.exe
           cp artifacts/dxf2plasmac-windows-arm64/dxf2PlasmaC-Setup.exe release/dxf2PlasmaC-Windows-arm64-Setup.exe
-          cp artifacts/dxf2PlasmaC-Mac-ARM64.dmg release/dxf2PlasmaC-Mac-ARM64.dmg
+          cp artifacts/macos-arm64-dmg/dxf2PlasmaC-Mac-ARM64.dmg release/
           echo "*** ls -l release ***"
           ls -l release
 
-      - name: Publish GitHub Release
+      - name: Publish to GitHub repo
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
           generate_release_notes: true
           files:
             release/*
-             # artifacts/dxf2plasmac-windows-x64/dxf2PlasmaC-Windows-x64-Setup.exe
-             # artifacts/dxf2plasmac-windows-arm64/dxf2PlasmaC-Windows-arm64-Setup.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
