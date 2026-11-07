@@ -46,7 +46,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: windows-arm64-installer
-          path: dist/dxf2PlasmaC-arm64-Setup.exe
+          path: dist/dxf2PlasmaC-Setup.exe
 
   release:
     name: Release
