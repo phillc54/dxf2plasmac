@@ -76,7 +76,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: dxf2plasmac-windows-${{ matrix.arch }}
-          path: dist/dxf2PlasmaC-windows-*.exe
+          path: dist/
 
 #   release:
 #     needs: build
