@@ -58,7 +58,8 @@ jobs:
       - name: Print resulting directory structure
         run: |
           echo "=== Using find ==="
-          find dist -print
+          dir C:\a\dxf2plasmac\dxf2plasmac\dist
+          # find dist -print
 
       - name: Rename or Package Output
         shell: pwsh
