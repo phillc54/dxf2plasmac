@@ -3,24 +3,23 @@ import os
 
 import CTkColorPicker
 import ctkmessagebox2
-import customtkinter
-
-# Find where customtkinter is installed on the current OS runner
-col_path = os.path.dirname(CTkColorPicker.__file__)
-msg_path = os.path.dirname(ctkmessagebox2.__file__)
-ctk_path = os.path.dirname(customtkinter.__file__)
-print(f'{col_path}\n{msg_path}\n{ctk_path}')
 
 block_cipher = None
 
-# Dynamically bundle the internal json/otf theme files
-datas = [(ctk_path, 'customtkinter/')]
+root = os.getcwd()
+main_script = os.path.join(root, 'src', 'dxf2plasmac', 'main.py')
+assets = os.path.join(root, 'src', 'dxf2plasmac', 'assets')
+app_icon = os.path.join(assets, 'dxf2plasmac.icns')
 
-# Add any custom asset folders you have (e.g., images)
-# datas += [('assets/', 'assets/')]
+datas = [(assets, 'assets')]
+# these don't have hooks for pyinstaller so add them to datas
+col_path = os.path.dirname(CTkColorPicker.__file__)
+datas += [(col_path, 'CTkColorPicker')]
+msg_path = os.path.dirname(ctkmessagebox2.__file__)
+datas += [(msg_path, 'ctkmessagebox2')]
 
 a = Analysis(
-    ['main.py'],  # Replace with your entry script
+    [main_script],  # Replace with your entry script
     pathex=[],
     binaries=[],
     datas=datas,
@@ -41,7 +40,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='MyCustomTkinterApp',
+    name='dxf2PlasmaC',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -62,13 +61,20 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='MyCustomTkinterApp',
+    name='dxf2PlasmaC',
 )
+
+icon = app_icon if os.path.exists(app_icon) else None
 
 app = BUNDLE(
     coll,
-    name='MyCustomTkinterApp.app',
-    icon='assets/app_icon.icns',
-    bundle_identifier='com.yourcompany.mycustomtkinterapp',
-    target_arch=os.environ.get('MACOS_ARCH', 'x86_64') # Dynamically sets arch via workflow env
+    name='dxf2PlasmaC.app',
+    icon=icon,
+    bundle_identifier='com.local.dxf2plasmac',
+    info_plist={
+        'NSPrincipalClass': 'NSApplication',
+        'NSAppleScriptEnabled': False,
+        'CFBundleShortVersionString': '0.1.0',
+    },
+    # target_arch=os.environ.get('MACOS_ARCH', 'x86_64') # Dynamically sets arch via workflow env
 )
