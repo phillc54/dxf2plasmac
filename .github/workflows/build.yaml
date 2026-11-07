@@ -55,6 +55,12 @@ jobs:
         run: pyinstaller src/dxf2plasmac/main.spec
 
 
+      - name: Compile Inno Setup Installer
+        run: iscc installer.iss
+        # Note: To fully lock down the ARM64 MSI installer layer, you can create a second
+        # installer.iss file using 'ArchitecturesAllowed=arm64' if desired.
+
+
 #       - name: Print resulting directory structure
 #         run: |
 #           echo "=== Using find ==="
