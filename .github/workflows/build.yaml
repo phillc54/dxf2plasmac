@@ -117,8 +117,8 @@ jobs:
           cp -r dist/dxf2PlasmaC/* AppDir/usr/bin/
           cp my-app.desktop AppDir/
           ln -s usr/bin/dxf2PlasmaC AppDir/AppRun
-          cp assets/dxf2plasmac.png AppDir/usr/share/icons/hicolor/256x256/apps/dxf2plasmac.png
-          cp assets/dxf2plasmac.png AppDir/.DirIcon
+          cp src/dxf2plasmac/assets/dxf2plasmac.png AppDir/usr/share/icons/hicolor/256x256/apps/dxf2plasmac.png
+          cp src/dxf2plasmac/assets/dxf2plasmac.png AppDir/.DirIcon
 
       - name: Download appimagetool and Build Package
         run: |
@@ -172,8 +172,8 @@ jobs:
             cp -r dist/dxf2PlasmaC/* AppDir/usr/bin/
             cp my-app.desktop AppDir/
             ln -s usr/bin/dxf2PlasmaC AppDir/AppRun
-            cp assets/dxf2plasmac.png AppDir/usr/share/icons/hicolor/256x256/apps/dxf2plasmac.png
-            cp assets/dxf2plasmac.png AppDir/.DirIcon
+            cp src/dxf2plasmac/assets/dxf2plasmac.png AppDir/usr/share/icons/hicolor/256x256/apps/dxf2plasmac.png
+            cp src/dxf2plasmac/assets/dxf2plasmac.png AppDir/.DirIcon
 
             # 5. Build ARM build via native architecture compiler binary link
             wget -q https://github.com
