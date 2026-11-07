@@ -33,10 +33,10 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.12'
           architecture: ${{ matrix.arch }}
@@ -57,15 +57,15 @@ jobs:
       - name: Rename or Package Output
         shell: pwsh
         run: |
-          $exePath = "dist/your-script.exe"
-          $newName = "your-app-windows-${{ matrix.arch }}.exe"
+          $exePath = "dist/dxf2PlasmaC-Setup"
+          $newName = "dxf2PlasmaC-windows-${{ matrix.arch }}.exe"
           Copy-Item $exePath -Destination "dist/$newName"
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: app-windows-${{ matrix.arch }}
-          path: dist/your-app-windows-*.exe
+          path: dist/dxf2PlasmaC-windows-*.exe
 
 #   release:
 #     needs: build
