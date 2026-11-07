@@ -31,7 +31,7 @@ jobs:
         uses: uraimo/run-on-arch-action@v3
         with:
           arch: aarch64
-          distro: ubuntu_latest
+          distro: ubuntu-22.04
           githubToken: ${{ github.token }}
           setup: |
             mkdir -p "${PWD}/artifacts"
@@ -44,7 +44,7 @@ jobs:
             # 2. Package App Payload Dependencies
             python3 -m pip install --upgrade pip
             # pip3 install customtkinter pyinstaller Pillow
-            pip3 install --break-system-packages -r requirements.txt
+            pip install -r requirements.txt
 
             # 3. Compile PyInstaller
             pyinstaller src/dxf2plasmac/main.spec
