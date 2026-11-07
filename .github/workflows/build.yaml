@@ -55,27 +55,27 @@ jobs:
         run: pyinstaller src/dxf2plasmac/main.spec
 
 
-      - name: Print resulting directory structure
-        run: |
-          echo "=== Using find ==="
-          #dir C:\a\dxf2plasmac\dxf2plasmac\dist
-          # forfiles /S /M dist /C "cmd /c if @isdir==TRUE echo @path"
-          # dir @path
-          # for /d /r . %G in (dist) do @if exist "%G" (echo === %G === & dir /b "%G")
-          dir dist /ad /s /b
-          # find dist -print
-
-      - name: Rename or Package Output
-        shell: pwsh
-        run: |
-          $exePath = "dist/dxf2PlasmaC-Setup"
-          $newName = "dxf2PlasmaC-windows-${{ matrix.arch }}.exe"
-          Copy-Item $exePath -Destination "dist/$newName"
+#       - name: Print resulting directory structure
+#         run: |
+#           echo "=== Using find ==="
+#           #dir C:\a\dxf2plasmac\dxf2plasmac\dist
+#           # forfiles /S /M dist /C "cmd /c if @isdir==TRUE echo @path"
+#           # dir @path
+#           # for /d /r . %G in (dist) do @if exist "%G" (echo === %G === & dir /b "%G")
+#           dir dist /ad /s /b
+#           # find dist -print
+#
+#       - name: Rename or Package Output
+#         shell: pwsh
+#         run: |
+#           $exePath = "dist/dxf2PlasmaC-Setup"
+#           $newName = "dxf2PlasmaC-windows-${{ matrix.arch }}.exe"
+#           Copy-Item $exePath -Destination "dist/$newName"
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: app-windows-${{ matrix.arch }}
+          name: dxf2plasmac-windows-${{ matrix.arch }}
           path: dist/dxf2PlasmaC-windows-*.exe
 
 #   release:
