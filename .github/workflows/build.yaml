@@ -294,8 +294,9 @@ jobs:
 
       - name: Print resulting directory structure
         run: |
-          echo "=== Using find ==="
-          find artifacts -print
+          # echo "=== Using find ==="
+          # find artifacts -print
+          ls -l artifacts
 
 #       - name: Organize Deployment Architecture Manifest Files
 #         run: |
