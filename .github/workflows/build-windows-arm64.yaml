@@ -18,7 +18,6 @@ jobs:
   build-windows-arm64:
     name: Windows arm64 Build
     runs-on: windows-11-arm
-
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -47,13 +46,29 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: windows-arm64-installer
-          path: dist/dxf2PlasmaC-Setup.exe
+          path: dist/dxf2PlasmaC-arm64-Setup.exe
 
-      - name: Create GitHub Release and Upload DMG
+  release:
+    name: Release
+    needs: [build-windows-arm64]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+
+      - name: Print resulting directory structure
+        run: |
+          echo "=== Using find ==="
+          find artifacts -print
+
+      - name: Publish Release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
           generate_release_notes: true
-          files: dist/dxf2PlasmaC-Mac-ARM64.dmg
+          # files: dist/dxf2PlasmaC-Setup.exe
+          files: artifacts/dxf2PlasmaC-arm64-Setup.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
