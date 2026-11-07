@@ -61,7 +61,8 @@ jobs:
           #dir C:\a\dxf2plasmac\dxf2plasmac\dist
           # forfiles /S /M dist /C "cmd /c if @isdir==TRUE echo @path"
           # dir @path
-          for /d /r . %G in (dist) do @if exist "%G" (echo === %G === & dir /b "%G")
+          # for /d /r . %G in (dist) do @if exist "%G" (echo === %G === & dir /b "%G")
+          dir dist /ad /s /b
           # find dist -print
 
       - name: Rename or Package Output
