@@ -11,6 +11,9 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write   # required to create releases
+
 jobs:
   build-windows-arm64:
     name: Windows arm64 Build

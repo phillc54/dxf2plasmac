@@ -11,6 +11,9 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write   # required to create releases
+
 jobs:
   build-linux-aarch64:
     name: Linux aarch64 Build

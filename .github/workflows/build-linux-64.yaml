@@ -11,6 +11,9 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write   # required to create releases
+
 jobs:
   build-linux-64:
     name: Linux x86_64 Build

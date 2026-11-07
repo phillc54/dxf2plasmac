@@ -11,6 +11,9 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write   # required to create releases
+
 jobs:
   build-windows-64:
     name: Windows 64 Build
