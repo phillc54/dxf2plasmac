@@ -49,6 +49,6 @@ jobs:
         with:
           tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
           generate_release_notes: true
-          files: dist/dxf2PlasmaC-Mac-ARM64.dmg
+          files: dist/dxf2PlasmaC-Setup.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
