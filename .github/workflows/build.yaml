@@ -289,18 +289,20 @@ jobs:
 #           cp raw_artifacts/linux-aarch64-appimage/dxf2PlasmaC-Linux-aarch64.AppImage release/
 #
 
-      - name: Rename exe file to reflect architecture
+      - name: Rename exe files to reflect architecture
         run: |
           mv artifacts/dxf2plasmac-windows-x64/dxf2PlasmaC-Setup.exe artifacts/dxf2plasmac-windows-x64/dxf2PlasmaC-Windows-x64-Setup.exe
           mv artifacts/dxf2plasmac-windows-arm64/dxf2PlasmaC-Setup.exe artifacts/dxf2plasmac-windows-arm64/dxf2PlasmaC-Windows-arm64-Setup.exe
+          ls -l artifacts/dxf2plasmac-windows-x64
+          ls -l artifacts/dxf2plasmac-windows-arm64
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
           generate_release_notes: true
-          files: artifacts/*
-             artifacts/dxf2plasmac-windows-x64/*.exe
-             artifacts/dxf2plasmac-windows-arm64/*.exe
+          files:
+             artifacts/dxf2plasmac-windows-x64/dxf2PlasmaC-Windows-x64-Setup.exe
+             artifacts/dxf2plasmac-windows-arm64/dxf2PlasmaC-Windows-arm64-Setup.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
