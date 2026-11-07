@@ -58,7 +58,8 @@ jobs:
       - name: Print resulting directory structure
         run: |
           echo "=== Using find ==="
-          dir C:\a\dxf2plasmac\dxf2plasmac\dist
+          #dir C:\a\dxf2plasmac\dxf2plasmac\dist
+          forfiles /S /M dist /C "cmd /c if @isdir==TRUE echo @path"
           # find dist -print
 
       - name: Rename or Package Output
