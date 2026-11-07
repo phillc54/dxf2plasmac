@@ -1,6 +1,7 @@
 name: Production Multi-Architecture Installer Packages Build
 
 on:
+  workflow_dispatch:
   push:
     tags:
       - 'v*'
