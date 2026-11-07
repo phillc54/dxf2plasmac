@@ -2,6 +2,11 @@ name:  Build macOS-arm64
 
 on:
   workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'The tag version for this release (e.g., v1.2.3)'
+        required: true
+        type: string
   push:
     tags:
       - 'v*'
@@ -48,8 +53,8 @@ jobs:
       - name: Create GitHub Release and Upload DMG
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: "v0.1.0-${{ github.run_number }}" # Generates a unique tag name per run
-          target_commitish: ${{ github.sha }}
+          tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
+          generate_release_notes: true
           files: dist/dxf2PlasmaC-Mac-ARM64.dmg
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
