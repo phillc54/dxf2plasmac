@@ -291,10 +291,10 @@ jobs:
 
       - name: Rename exe files to reflect architecture
         run: |
-          mv artifacts/dxf2plasmac-windows-x64/dxf2PlasmaC-Setup.exe artifacts/dxf2plasmac-windows-x64/dxf2PlasmaC-Windows-x64-Setup.exe
-          mv artifacts/dxf2plasmac-windows-arm64/dxf2PlasmaC-Setup.exe artifacts/dxf2plasmac-windows-arm64/dxf2PlasmaC-Windows-arm64-Setup.exe
-          ls -l artifacts/dxf2plasmac-windows-x64
-          ls -l artifacts/dxf2plasmac-windows-arm64
+          mkdir release
+          cp artifacts/dxf2plasmac-windows-x64/dxf2PlasmaC-Setup.exe release/dxf2PlasmaC-Windows-x64-Setup.exe
+          cp artifacts/dxf2plasmac-windows-arm64/dxf2PlasmaC-Setup.exe release/dxf2PlasmaC-Windows-arm64-Setup.exe
+          ls -l release
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v3
@@ -302,7 +302,8 @@ jobs:
           tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
           generate_release_notes: true
           files:
-             artifacts/dxf2plasmac-windows-x64/dxf2PlasmaC-Windows-x64-Setup.exe
-             artifacts/dxf2plasmac-windows-arm64/dxf2PlasmaC-Windows-arm64-Setup.exe
+            release/*
+             # artifacts/dxf2plasmac-windows-x64/dxf2PlasmaC-Windows-x64-Setup.exe
+             # artifacts/dxf2plasmac-windows-arm64/dxf2PlasmaC-Windows-arm64-Setup.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
