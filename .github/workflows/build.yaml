@@ -20,7 +20,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
-          python-version: '3.14'
+          python-version: '3.14.4'
           architecture: ${{ matrix.arch }} # Python cross-compiles Windows binaries based on architecture flag
           cache: 'pip'
 
@@ -141,12 +141,12 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up QEMU Hardware Emulation
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
         with:
           platforms: arm64
 
       - name: Execute ARM Execution Container Matrix Build
-        uses: uraimo/run-on-arch-action@v2
+        uses: uraimo/run-on-arch-action@v3
         with:
           arch: aarch64
           distro: ubuntu22.04
@@ -184,7 +184,7 @@ jobs:
             cp dxf2PlasmaC-Linux-aarch64.AppImage /artifacts/
 
       - name: Upload ARM AppImage Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux-aarch64-appimage
           path: artifacts/dxf2PlasmaC-Linux-aarch64.AppImage
@@ -195,7 +195,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download All Pipeline Artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: raw_artifacts
 
@@ -210,7 +210,7 @@ jobs:
           cp raw_artifacts/linux-aarch64-appimage/dxf2PlasmaC-Linux-aarch64.AppImage production_release/
 
       - name: Publish Production GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: production_release/*
         env:
