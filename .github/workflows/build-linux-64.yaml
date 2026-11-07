@@ -54,7 +54,6 @@ jobs:
 
       - name: Download appimagetool and Build Package
         run: |
-          # wget -q https://github.com
           wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x appimagetool-x86_64.AppImage
           export ARCH=x86_64
