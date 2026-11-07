@@ -31,7 +31,9 @@ jobs:
         uses: uraimo/run-on-arch-action@v3
         with:
           arch: aarch64
-          distro: ubuntu22.04
+          distro: ubuntu_latest
+          dockerRunArgs: |
+            --user root
           githubToken: ${{ github.token }}
           setup: |
             mkdir -p "${PWD}/artifacts"
