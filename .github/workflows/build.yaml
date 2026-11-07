@@ -64,7 +64,7 @@ jobs:
       - name: Build App Bundle with PyInstaller
         env:
           MACOS_ARCH: arm64
-        run: pyinstaller build_scripts/main.spec
+        run: pyinstaller src/dxf2plasmac/main.spec
 
       - name: Create DMG Disk Image
         run: |
@@ -108,7 +108,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Build App with PyInstaller
-        run: pyinstaller build_scripts/main.spec
+        run: pyinstaller src/dxf2plasmac/main.spec
 
       - name: Structure AppDir for AppImage Packaging
         run: |
@@ -164,7 +164,7 @@ jobs:
             pip3 install customtkinter pyinstaller Pillow
 
             # 3. Compile PyInstaller
-            pyinstaller build_scripts/main.spec
+            pyinstaller src/dxf2plasmac/main.spec
 
             # 4. Generate Linux AppDir Build Structure
             mkdir -p AppDir/usr/bin
