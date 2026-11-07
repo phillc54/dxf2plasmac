@@ -17,7 +17,7 @@ permissions:
 jobs:
   build-linux-aarch64:
     name: Linux aarch64 Build
-    runs-on: ubuntu-24.10
+    runs-on: ubuntu-24.04
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -31,7 +31,7 @@ jobs:
         uses: uraimo/run-on-arch-action@v3
         with:
           arch: aarch64
-          distro: ubuntu-24.10
+          distro: ubuntu-24.04
           githubToken: ${{ github.token }}
           setup: |
             mkdir -p "${PWD}/artifacts"
@@ -60,7 +60,7 @@ jobs:
             cp src/dxf2plasmac/assets/dxf2plasmac.png AppDir
 
             # 5. Build ARM build via native architecture compiler binary link
-            wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+            wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-aarch64_64.AppImage
             chmod +x appimagetool-aarch64.AppImage
 
             export ARCH=aarch64
