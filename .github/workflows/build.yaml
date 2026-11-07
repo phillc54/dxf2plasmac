@@ -59,8 +59,9 @@ jobs:
         run: |
           echo "=== Using find ==="
           #dir C:\a\dxf2plasmac\dxf2plasmac\dist
-          forfiles /S /M dist /C "cmd /c if @isdir==TRUE echo @path"
-          dir @path/dist
+          # forfiles /S /M dist /C "cmd /c if @isdir==TRUE echo @path"
+          # dir @path
+          for /f "tokens=*" %i in ('dir /b /s /ad dist') do @dir "%i"
           # find dist -print
 
       - name: Rename or Package Output
