@@ -2,6 +2,11 @@ name: Build Linux-aarch64
 
 on:
   workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'The tag version for this release (e.g., v1.2.3)'
+        required: true
+        type: string
   push:
     tags:
       - 'v*'
@@ -63,25 +68,11 @@ jobs:
           name: linux-aarch64-appimage
           path: artifacts/dxf2PlasmaC-Linux-aarch64.AppImage
 
-  release:
-    name: Publish Release Hub
-    needs: [build-linux-aarch64]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download All Pipeline Artifacts
-        uses: actions/download-artifact@v8
-        with:
-          path: raw_artifacts
-
-      - name: Organize Deployment Architecture Manifest Files
-        run: |
-          mkdir release
-          # Rename and match artifacts systematically into a unified distribution bucket
-          cp raw_artifacts/linux-aarch64-appimage/dxf2PlasmaC-Linux-aarch64.AppImage release/
-
-      - name: Publish GitHub Release
+      - name: Create GitHub Release and Upload DMG
         uses: softprops/action-gh-release@v3
         with:
-          files: release/*
+          tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
+          generate_release_notes: true
+          files: dist/dxf2PlasmaC-Mac-ARM64.dmg
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
