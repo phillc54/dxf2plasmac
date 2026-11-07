@@ -1,0 +1,63 @@
+name: Installer Packages Build
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-windows-64:
+    name: Windows 64 Build
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14.10'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Build App Folder with PyInstaller
+        run: pyinstaller src/dxf2plasmac/main.spec
+
+      - name: Compile Inno Setup Installer
+        run: iscc installer.iss
+        # Note: To fully lock down the ARM64 MSI installer layer, you can create a second
+        # installer.iss file using 'ArchitecturesAllowed=arm64' if desired.
+
+      - name: Upload Installer Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-64-installer
+          path: dist/dxf2PlasmaC-Setup.exe
+
+  release:
+    name: Publish Release Hub
+    needs: [build-windows-64]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download All Pipeline Artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: raw_artifacts
+
+      - name: Organize Deployment Architecture Manifest Files
+        run: |
+          mkdir release
+          # Rename and match artifacts systematically into a unified distribution bucket
+          cp raw_artifacts/windows-x64-installer/dxf2PlasmaC-Setup.exe release/dxf2PlasmaC-Windows-x64-Setup.exe
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: release/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

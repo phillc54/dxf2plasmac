@@ -1,0 +1,72 @@
+name:  Build macOS
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-macos:
+    name: macOS (ARM64) Build
+    runs-on: macos-latest # GitHub macOS runners natively execute on M-series Apple Silicon ARM architecture
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          brew install create-dmg
+
+      - name: Build App Bundle with PyInstaller
+        env:
+          MACOS_ARCH: arm64
+        run: pyinstaller src/dxf2plasmac/main.spec
+
+      - name: Create DMG Disk Image
+        run: |
+          create-dmg \
+            --volname "dxf2PlasmaC Installation" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --icon "dxf2PlasmaC.app" 175 190 \
+            --app-drop-link 425 190 \
+            "dist/dxf2PlasmaC-Mac-ARM64.dmg" \
+            "dist/dxf2PlasmaC.app"
+
+      - name: Upload DMG Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-arm64-dmg
+          path: dist/dxf2PlasmaC-Mac-ARM64.dmg
+
+  release:
+    name: Publish Release Hub
+    needs: [build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download All Pipeline Artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: raw_artifacts
+
+      - name: Organize Deployment Architecture Manifest Files
+        run: |
+          mkdir release
+          # Rename and match artifacts systematically into a unified distribution bucket
+          cp raw_artifacts/macos-arm64-dmg/dxf2PlasmaC-Mac-ARM64.dmg release/
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: release/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
