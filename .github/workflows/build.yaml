@@ -288,6 +288,12 @@ jobs:
 #           cp raw_artifacts/linux-x86_64-appimage/dxf2PlasmaC-Linux-x86_64.AppImage release/
 #           cp raw_artifacts/linux-aarch64-appimage/dxf2PlasmaC-Linux-aarch64.AppImage release/
 #
+
+      - name: Rename exe file to reflect architecture
+        run: |
+          mv artifacts/dxf2plasmac-windows-x64/dxf2PlasmaC-Setup.exe artifacts/dxf2plasmac-windows-x64/dxf2PlasmaC-Windows-x64-Setup.exe
+          mv artifacts/dxf2plasmac-windows-arm64/dxf2PlasmaC-Setup.exe artifacts/dxf2plasmac-windows-arm64/dxf2PlasmaC-Windows-arm64-Setup.exe
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v3
         with:
