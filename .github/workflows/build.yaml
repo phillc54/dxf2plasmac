@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'The tag version for this release (e.g., v1.2.3)'
+        description: 'Tag version for this release (e.g., v1.2.3)'
         required: true
         type: string
   push:
@@ -12,11 +12,11 @@ on:
       - 'v*'
 
 permissions:
-  contents: write   # required to create releases
+  contents: write
 
 jobs:
   build-macos-arm64:
-    name: macOS (ARM64) Build
+    name: macOS arm64 build
     runs-on: macos-15
     steps:
       - name: Check out repository
@@ -36,7 +36,6 @@ jobs:
       - name: Build app bundle with pyinstaller
         env:
           MACOS_ARCH: arm64
-        # run: pyinstaller src/dxf2plasmac/main.spec
         run: pyinstaller build_scripts/main.spec
 
       - name: Create dmg disk image
@@ -95,7 +94,6 @@ jobs:
           pip install -r build_scripts/requirements.txt
 
       - name: Build app with pyinstaller
-        # run: pyinstaller src/dxf2plasmac/main.spec
         run: pyinstaller build_scripts/main.spec
 
       - name: Prepare appdir for appimage packaging
@@ -152,33 +150,16 @@ jobs:
           python -m pip install -r build_scripts/requirements.txt
 
       - name: Build with pyinstaller
-        # run: pyinstaller src/dxf2plasmac/main.spec
         run: pyinstaller build_scripts/main.spec
-
-      # - name: List build_scripts 1 directory
-      #   run: |
-      #     echo "BUILD_SCRIPTS:"
-      #     ls -l build_scripts/
 
       - name: Compile inno setup installer
         run: iscc build_scripts/installer.iss
-
-      # - name: List build_scripts 2 directory
-      #   run: |
-      #     echo "BUILD_SCRIPTS:"
-      #     ls -l build_scripts/
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
           name: dxf2plasmac-windows-${{ matrix.arch }}
           path: dist/
-          # path: build_scripts/dist/
-
-      # - name: List dist directory
-      #   run: |
-      #     echo "DIST:"
-      #     ls -l dist/
 
 
   release:
@@ -190,15 +171,6 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           path: artifacts
-
-      # - name: List artifact directory
-      #   run: |
-      #     echo "ARTIFACTS:"
-      #     ls -l artifacts/
-      #     echo "ARTIFACTS/DXF2PLASMAC-WINDOWS-X64:"
-      #     ls -l artifacts/dxf2plasmac-windows-x64/
-      #     echo "ARTIFACTS/DXF2PLASMAC-WINDOWS-X64/DXF2pLASMAC"
-      #     ls -l artifacts/dxf2plasmac-windows-x64/dxf2PlasmaC/
 
       - name: Place packages in a release directory
         run: |
@@ -213,14 +185,13 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
-          # generate_release_notes: true
+          generate_release_notes: false
+          body: |
+            - None of these images are signed.
+
+            - macOS images requires the following after installing:
+              xattr -dr com.apple.quarantine /Applications/dxf2PlasmaC.app
           files:
             release/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          MSG: |
-            - None of these images are signed.
-            - macOS images requires the following after installing:
-              xattr -dr com.apple.quarantine /Applications/dxf2PlasmaC.app
-          run: |
-            gh release create "$GITHUB_REF_NAME" --title "Release $GITHUB_REF_NAME" --notes "$RELEASE_MSG"
