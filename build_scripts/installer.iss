@@ -10,7 +10,7 @@ SolidCompression=yes
 WizardStyle=modern
 
 [Files]
-Source: "dist\dxf2PlasmaC\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs
+Source: "..\dist\dxf2PlasmaC\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\dxf2PlasmaC"; Filename: "{app}\dxf2PlasmaC.exe"
