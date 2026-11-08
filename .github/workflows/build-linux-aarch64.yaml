@@ -31,7 +31,7 @@ jobs:
         uses: uraimo/run-on-arch-action@v3
         with:
           arch: aarch64
-          distro: ubuntu-24.04
+          distro: ubuntu-24.10
           githubToken: ${{ github.token }}
           setup: |
             mkdir -p "${PWD}/artifacts"
