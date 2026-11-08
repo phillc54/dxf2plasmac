@@ -287,10 +287,10 @@ jobs:
           # ls -l artifacts/dxf2plasmac-windows-x64
           # echo "*** ls -l artifacts/dxf2plasmac-windows-arm64 ***"
           # ls -l artifacts/dxf2plasmac-windows-arm64
-          echo "ls -l artifacts/dxf2plasmac-linux-x86_64/"
-          ls -l artifacts/dxf2plasmac-linux-x86_64/dxf2PlasmaC
-          echo "ls -l artifacts/dxf2plasmac-linux-aarch64/"
-          ls -l artifacts/dxf2plasmac-linux-aarch64/dxf2PlasmaC
+          # echo "ls -l artifacts/dxf2plasmac-linux-x86_64/"
+          # ls -l artifacts/dxf2plasmac-linux-x86_64/dxf2PlasmaC
+          # echo "ls -l artifacts/dxf2plasmac-linux-aarch64/"
+          # ls -l artifacts/dxf2plasmac-linux-aarch64/dxf2PlasmaC
 
 #       - name: Organize Deployment Architecture Manifest Files
 #         run: |
