@@ -1,4 +1,4 @@
-name: Build Linux-64
+name: Build Linux-64-arm
 
 on:
   workflow_dispatch:
