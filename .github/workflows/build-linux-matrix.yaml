@@ -221,7 +221,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: dxf2plasmac-linux-${{ matrix.arch }}
-          path: dist/
+          path: dxf2PlasmaC-Linux-${{ matrix.arch }}.AppImage
 
 
 
