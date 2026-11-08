@@ -155,19 +155,29 @@ jobs:
         # run: pyinstaller src/dxf2plasmac/main.spec
         run: pyinstaller build_scripts/main.spec
 
-      - name: List build_scripts directory
+      - name: List build_scripts 1 directory
         run: |
-          echo "build_scripts:"
+          echo -e "\nbuild_scripts:"
           ls -l build_scripts/
 
       - name: Compile inno setup installer
         run: iscc build_scripts/installer.iss
+
+      - name: List build_scripts 2 directory
+        run: |
+          echo -e "\nbuild_scripts:"
+          ls -l build_scripts/
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
           name: dxf2plasmac-windows-${{ matrix.arch }}
           path: dist/
+
+      - name: List dist directory
+        run: |
+          echo -e "\ndist:"
+          ls -l dist/
 
 
   release:
@@ -182,11 +192,11 @@ jobs:
 
       - name: List artifact directory
         run: |
-          echo "artifacts:"
+          echo -e "\nartifacts:"
           ls -l artifacts/
-          echo "artifacts/dxf2plasmac-windows-x64:"
+          echo -e "\nartifacts/dxf2plasmac-windows-x64:"
           ls -l artifacts/dxf2plasmac-windows-x64/
-          echo "artifacts/dxf2plasmac-windows-x64/dxf2PlasmaC"
+          echo -e "\nartifacts/dxf2plasmac-windows-x64/dxf2PlasmaC"
           ls -l artifacts/dxf2plasmac-windows-x64/dxf2PlasmaC/
 
       - name: Place packages in a release directory
