@@ -116,56 +116,48 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7
 
-      - name: Set up QEMU Hardware Emulation
-        uses: docker/setup-qemu-action@v4
+      - name: Set up python
+        uses: actions/setup-python@v7
         with:
-          platforms: arm64
+          python-version: '3.14'
+          cache: 'pip'
 
-      - name: Execute ARM Execution Container Matrix Build
-        uses: uraimo/run-on-arch-action@v3
-        with:
-          arch: aarch64
-          distro: ubuntu-24.04-arm
-          githubToken: ${{ github.token }}
-          setup: |
-            mkdir -p "${PWD}/artifacts"
-          dockerRunArgs: |
-            --volume "${PWD}/artifacts:/artifacts"
-          run: |
-            # 1. Install internal emulator runtime frameworks
-            apt-get update && apt-get install -y python3-pip python3-tk wget binutils libfuse2 file git
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-tk libfuse2
 
-            # 2. Package App Payload Dependencies
-            python3 -m pip install --upgrade pip
-            # pip3 install customtkinter pyinstaller Pillow
-            pip install -r requirements.txt
+      - name: Install python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-            # 3. Compile PyInstaller
-            pyinstaller src/dxf2plasmac/main.spec
+      - name: Build app with pyinstaller
+        run: pyinstaller src/dxf2plasmac/main.spec
 
-            # 4. Generate Linux AppDir Build Structure
-            mkdir -p AppDir/usr/bin
-            mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
-            cp -r dist/dxf2PlasmaC/* AppDir/usr/bin/
-            cp my-app.desktop AppDir/
-            ln -s usr/bin/dxf2PlasmaC AppDir/AppRun
-            cp src/dxf2plasmac/assets/dxf2plasmac.png AppDir/usr/share/icons/hicolor/256x256/apps/dxf2plasmac.png
-            cp src/dxf2plasmac/assets/dxf2plasmac.png AppDir/.DirIcon
-            cp src/dxf2plasmac/assets/dxf2plasmac.png AppDir
+      - name: Structure appdir for appimage packaging
+        run: |
+          mkdir -p AppDir/usr/bin
+          mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+          cp -r dist/dxf2PlasmaC/* AppDir/usr/bin/
+          cp my-app.desktop AppDir/
+          ln -s usr/bin/dxf2PlasmaC AppDir/AppRun
+          cp src/dxf2plasmac/assets/dxf2plasmac.png AppDir/usr/share/icons/hicolor/256x256/apps/dxf2plasmac.png
+          cp src/dxf2plasmac/assets/dxf2plasmac.png AppDir/.DirIcon
+          cp src/dxf2plasmac/assets/dxf2plasmac.png AppDir/
 
-            # 5. Build ARM build via native architecture compiler binary link
-            wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
-            chmod +x appimagetool-aarch64.AppImage
+      - name: Download appimagetool and build package
+        run: |
+          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-aarch64.AppImage
+          chmod +x appimagetool-aarch64.AppImage
+          export ARCH=aarch64
+          ./appimagetool-aarch64.AppImage AppDir dxf2PlasmaC-Linux-aarch64.AppImage
 
-            export ARCH=aarch64
-            ./appimagetool-aarch64.AppImage --appimage-extract-and-run AppDir dxf2PlasmaC-Linux-aarch64.AppImage
-            cp dxf2PlasmaC-Linux-aarch64.AppImage /artifacts/
-
-      - name: Upload ARM AppImage Artifact
+      - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
           name: linux-aarch64-appimage
-          path: artifacts/dxf2PlasmaC-Linux-aarch64.AppImage
+          path: dxf2PlasmaC-Linux-aarch64.AppImage
 
 
   build-windows:
@@ -195,7 +187,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
-      - name: Build with PyInstaller
+      - name: Build with pyinstaller
         run: pyinstaller src/dxf2plasmac/main.spec
 
       - name: Compile inno setup installer
@@ -207,63 +199,6 @@ jobs:
           name: dxf2plasmac-windows-${{ matrix.arch }}
           path: dist/
 
-
-
-#   build-linux-arm:
-#     name: Linux (aarch64 ARM) AppImage Build
-#     runs-on: ubuntu-22.04
-#     steps:
-#       - name: Check out repository
-#         uses: actions/checkout@v7
-#
-#       - name: Set up QEMU Hardware Emulation
-#         uses: docker/setup-qemu-action@v4
-#         with:
-#           platforms: arm64
-#
-#       - name: Execute ARM Execution Container Matrix Build
-#         uses: uraimo/run-on-arch-action@v3
-#         with:
-#           arch: aarch64
-#           distro: ubuntu22.04
-#           githubToken: ${{ github.token }}
-#           setup: |
-#             mkdir -p "${PWD}/artifacts"
-#           dockerRunArgs: |
-#             --volume "${PWD}/artifacts:/artifacts"
-#           run: |
-#             # 1. Install internal emulator runtime frameworks
-#             apt-get update && apt-get install -y python3-pip python3-tk wget binutils libfuse2 file git
-#
-#             # 2. Package App Payload Dependencies
-#             python3 -m pip install --upgrade pip
-#             pip3 install customtkinter pyinstaller Pillow
-#
-#             # 3. Compile PyInstaller
-#             pyinstaller src/dxf2plasmac/main.spec
-#
-#             # 4. Generate Linux AppDir Build Structure
-#             mkdir -p AppDir/usr/bin
-#             mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
-#             cp -r dist/dxf2PlasmaC/* AppDir/usr/bin/
-#             cp my-app.desktop AppDir/
-#             ln -s usr/bin/dxf2PlasmaC AppDir/AppRun
-#             cp src/dxf2plasmac/assets/dxf2plasmac.png AppDir/usr/share/icons/hicolor/256x256/apps/dxf2plasmac.png
-#             cp src/dxf2plasmac/assets/dxf2plasmac.png AppDir/.DirIcon
-#
-#             # 5. Build ARM build via native architecture compiler binary link
-#             wget -q https://github.com
-#             chmod +x appimagetool-aarch64.AppImage
-#
-#             export ARCH=aarch64
-#             ./appimagetool-aarch64.AppImage --appimage-extract-and-run AppDir dxf2PlasmaC-Linux-aarch64.AppImage
-#             cp dxf2PlasmaC-Linux-aarch64.AppImage /artifacts/
-#
-#       - name: Upload ARM AppImage Artifact
-#         uses: actions/upload-artifact@v7
-#         with:
-#           name: linux-aarch64-appimage
-#           path: artifacts/dxf2PlasmaC-Linux-aarch64.AppImage
 
   release:
     name: Prepare release
