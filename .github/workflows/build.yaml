@@ -177,8 +177,12 @@ jobs:
 
       - name: List artifact directory
         run: |
+          echo "artifacts:"
           ls -l artifacts/
+          echo "artifacts/dxf2plasmac-windows-x64:"
           ls -l artifacts/dxf2plasmac-windows-x64/
+          echo "artifacts/dxf2plasmac-windows-x64/dxf2PlasmaC"
+          ls -l artifacts/dxf2plasmac-windows-x64/dxf2PlasmaC/
 
       - name: Place packages in a release directory
         run: |
