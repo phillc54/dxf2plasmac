@@ -58,9 +58,121 @@ jobs:
           path: dist/dxf2PlasmaC-Mac-ARM64.dmg
 
 
-  build-linux-64:
-    name: Linux x86_64 Build
-    runs-on: ubuntu-22.04
+#   build-linux-64:
+#     name: Linux x86_64 Build
+#     runs-on: ubuntu-22.04
+#     steps:
+#       - name: Check out repository
+#         uses: actions/checkout@v7
+#
+#       - name: Set up python
+#         uses: actions/setup-python@v7
+#         with:
+#           python-version: '3.14'
+#           cache: 'pip'
+#
+#       - name: Install system dependencies
+#         run: |
+#           sudo apt-get update
+#           sudo apt-get install -y python3-tk libfuse2
+#
+#       - name: Install python dependencies
+#         run: |
+#           python -m pip install --upgrade pip
+#           pip install -r requirements.txt
+#
+#       - name: Build app with pyinstaller
+#         run: pyinstaller src/dxf2plasmac/main.spec
+#
+#       - name: Prepare appdir for appimage packaging
+#         run: |
+#           mkdir -p AppDir/usr/bin
+#           mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+#           cp -r dist/dxf2PlasmaC/* AppDir/usr/bin/
+#           cp my-app.desktop AppDir/
+#           ln -s usr/bin/dxf2PlasmaC AppDir/AppRun
+#           cp src/dxf2plasmac/assets/dxf2plasmac.png AppDir/usr/share/icons/hicolor/256x256/apps/dxf2plasmac.png
+#           cp src/dxf2plasmac/assets/dxf2plasmac.png AppDir/.DirIcon
+#           cp src/dxf2plasmac/assets/dxf2plasmac.png AppDir/
+#
+#       - name: Download appimagetool and build package
+#         run: |
+#           wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+#           chmod +x appimagetool-x86_64.AppImage
+#           export ARCH=x86_64
+#           ./appimagetool-x86_64.AppImage AppDir dxf2PlasmaC-Linux-x86_64.AppImage
+#
+#       - name: Upload artifacts
+#         uses: actions/upload-artifact@v7
+#         with:
+#           name: linux-x86_64-appimage
+#           path: dxf2PlasmaC-Linux-x86_64.AppImage
+#
+#
+#   build-linux-aarch64:
+#     name: Linux aarch64 Build
+#     runs-on: ubuntu-24.04-arm
+#     steps:
+#       - name: Check out repository
+#         uses: actions/checkout@v7
+#
+#       - name: Set up python
+#         uses: actions/setup-python@v7
+#         with:
+#           python-version: '3.14'
+#           cache: 'pip'
+#
+#       - name: Install system dependencies
+#         run: |
+#           sudo apt-get update
+#           sudo apt-get install -y python3-tk libfuse2
+#
+#       - name: Install python dependencies
+#         run: |
+#           python -m pip install --upgrade pip
+#           pip install -r requirements.txt
+#
+#       - name: Build app with pyinstaller
+#         run: pyinstaller src/dxf2plasmac/main.spec
+#
+#       - name: Structure appdir for appimage packaging
+#         run: |
+#           mkdir -p AppDir/usr/bin
+#           mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+#           cp -r dist/dxf2PlasmaC/* AppDir/usr/bin/
+#           cp my-app.desktop AppDir/
+#           ln -s usr/bin/dxf2PlasmaC AppDir/AppRun
+#           cp src/dxf2plasmac/assets/dxf2plasmac.png AppDir/usr/share/icons/hicolor/256x256/apps/dxf2plasmac.png
+#           cp src/dxf2plasmac/assets/dxf2plasmac.png AppDir/.DirIcon
+#           cp src/dxf2plasmac/assets/dxf2plasmac.png AppDir/
+#
+#       - name: Download appimagetool and build package
+#         run: |
+#           wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-aarch64.AppImage
+#           chmod +x appimagetool-aarch64.AppImage
+#           export ARCH=aarch64
+#           ./appimagetool-aarch64.AppImage AppDir dxf2PlasmaC-Linux-aarch64.AppImage
+#
+#       - name: Upload artifacts
+#         uses: actions/upload-artifact@v7
+#         with:
+#           name: linux-aarch64-appimage
+#           path: dxf2PlasmaC-Linux-aarch64.AppImage
+
+
+  build-linux:
+    name: Linux matrix build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            arch: x86_64
+            runner_label: ubuntu-22.04
+          - os: ubuntu-24.04-arm
+            arch: aarch64
+            runner_label: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner_label }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -69,6 +181,7 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: '3.14'
+          architecture: ${{ matrix.arch }}
           cache: 'pip'
 
       - name: Install system dependencies
@@ -97,70 +210,22 @@ jobs:
 
       - name: Download appimagetool and build package
         run: |
-          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
-          chmod +x appimagetool-x86_64.AppImage
-          export ARCH=x86_64
-          ./appimagetool-x86_64.AppImage AppDir dxf2PlasmaC-Linux-x86_64.AppImage
+          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-${{ matrix.arch }}.AppImage
+          chmod +x appimagetool-${{ matrix.arch }}.AppImage
+          export ARCH=${{ matrix.arch }}
+          ./appimagetool-${{ matrix.arch }}.AppImage AppDir dxf2PlasmaC-Linux-${{ matrix.arch }}.AppImage
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: linux-x86_64-appimage
-          path: dxf2PlasmaC-Linux-x86_64.AppImage
+          name: dxf2plasmac-windows-${{ matrix.arch }}
+          path: dist/
 
 
-  build-linux-aarch64:
-    name: Linux aarch64 Build
-    runs-on: ubuntu-24.04-arm
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-
-      - name: Set up python
-        uses: actions/setup-python@v7
-        with:
-          python-version: '3.14'
-          cache: 'pip'
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y python3-tk libfuse2
-
-      - name: Install python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Build app with pyinstaller
-        run: pyinstaller src/dxf2plasmac/main.spec
-
-      - name: Structure appdir for appimage packaging
-        run: |
-          mkdir -p AppDir/usr/bin
-          mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
-          cp -r dist/dxf2PlasmaC/* AppDir/usr/bin/
-          cp my-app.desktop AppDir/
-          ln -s usr/bin/dxf2PlasmaC AppDir/AppRun
-          cp src/dxf2plasmac/assets/dxf2plasmac.png AppDir/usr/share/icons/hicolor/256x256/apps/dxf2plasmac.png
-          cp src/dxf2plasmac/assets/dxf2plasmac.png AppDir/.DirIcon
-          cp src/dxf2plasmac/assets/dxf2plasmac.png AppDir/
-
-      - name: Download appimagetool and build package
-        run: |
-          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-aarch64.AppImage
-          chmod +x appimagetool-aarch64.AppImage
-          export ARCH=aarch64
-          ./appimagetool-aarch64.AppImage AppDir dxf2PlasmaC-Linux-aarch64.AppImage
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: linux-aarch64-appimage
-          path: dxf2PlasmaC-Linux-aarch64.AppImage
 
 
   build-windows:
+    name: windows matrix build
     strategy:
       fail-fast: false
       matrix:
@@ -234,8 +299,10 @@ jobs:
         run: |
           mkdir release
           cp artifacts/macos-arm64-dmg/dxf2PlasmaC-Mac-ARM64.dmg release/
-          cp artifacts/linux-x86_64-appimage/dxf2PlasmaC-Linux-x86_64.AppImage release/
-          cp artifacts/linux-aarch64-appimage/dxf2PlasmaC-Linux-aarch64.AppImage release/
+          # cp artifacts/linux-x86_64-appimage/dxf2PlasmaC-Linux-x86_64.AppImage release/
+          # cp artifacts/linux-aarch64-appimage/dxf2PlasmaC-Linux-aarch64.AppImage release/
+          cp artifacts/dxf2plasmac-linux-x86_64/dxf2PlasmaC-Linux-x86_64.AppImage release/
+          cp artifacts/dxf2plasmac-linux-aarch64/dxf2PlasmaC-Linux-aarch64.AppImage release/
           cp artifacts/dxf2plasmac-windows-x64/dxf2PlasmaC-Setup.exe release/dxf2PlasmaC-Windows-x64-Setup.exe
           cp artifacts/dxf2plasmac-windows-arm64/dxf2PlasmaC-Setup.exe release/dxf2PlasmaC-Windows-arm64-Setup.exe
           echo "*** ls -l release ***"
