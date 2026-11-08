@@ -155,6 +155,11 @@ jobs:
         # run: pyinstaller src/dxf2plasmac/main.spec
         run: pyinstaller build_scripts/main.spec
 
+      - name: List build_scripts directory
+        run: |
+          echo "build_scripts:"
+          ls -l build_scripts/
+
       - name: Compile inno setup installer
         run: iscc build_scripts/installer.iss
 
