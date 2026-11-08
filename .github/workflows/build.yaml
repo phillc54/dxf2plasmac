@@ -172,7 +172,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: dxf2plasmac-windows-${{ matrix.arch }}
-          path: dist/
+          path: build_scripts/dist/
 
       - name: List dist directory
         run: |
