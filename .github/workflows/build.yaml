@@ -161,7 +161,7 @@ jobs:
       #     ls -l build_scripts/
 
       - name: Compile inno setup installer
-        run: iscc build_scripts/installer.iss
+        run: iscc installer.iss
 
       # - name: List build_scripts 2 directory
       #   run: |
