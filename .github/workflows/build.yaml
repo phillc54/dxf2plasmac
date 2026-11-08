@@ -187,9 +187,9 @@ jobs:
           tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
           generate_release_notes: false
           body: |
-            - None of these images are signed.
+            - None of these packages are signed.
 
-            - macOS images requires the following after installing:
+            - macOS packages requires the following after installing:
               xattr -dr com.apple.quarantine /Applications/dxf2PlasmaC.app
           files:
             release/*
