@@ -168,9 +168,11 @@ jobs:
         include:
           - os: ubuntu-22.04
             arch: x86_64
+            py: x64
             runner_label: ubuntu-22.04
           - os: ubuntu-24.04-arm
             arch: aarch64
+            py: arm64
             runner_label: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner_label }}
     steps:
@@ -181,7 +183,7 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: '3.14'
-          architecture: ${{ matrix.arch }}
+          architecture: ${{ matrix.py }}
           cache: 'pip'
 
       - name: Install system dependencies
@@ -218,10 +220,8 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: dxf2plasmac-windows-${{ matrix.arch }}
-          path: dist/
-
-
+          name: dxf2plasmac-linux-${{ matrix.arch }}
+          path: dxf2PlasmaC-Linux-${{ matrix.arch }}.AppImage
 
 
   build-windows:
