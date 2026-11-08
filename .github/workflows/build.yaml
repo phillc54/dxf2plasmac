@@ -157,7 +157,7 @@ jobs:
 
       - name: List build_scripts 1 directory
         run: |
-          echo -e "\nbuild_scripts:"
+          echo "BUILD_SCRIPTS:"
           ls -l build_scripts/
 
       - name: Compile inno setup installer
@@ -165,7 +165,7 @@ jobs:
 
       - name: List build_scripts 2 directory
         run: |
-          echo -e "\nbuild_scripts:"
+          echo "BUILD_SCRIPTS:"
           ls -l build_scripts/
 
       - name: Upload artifacts
@@ -176,7 +176,7 @@ jobs:
 
       - name: List dist directory
         run: |
-          echo -e "\ndist:"
+          echo "DIST:"
           ls -l dist/
 
 
@@ -192,11 +192,11 @@ jobs:
 
       - name: List artifact directory
         run: |
-          echo -e "\nartifacts:"
+          echo "ARTIFACTS:"
           ls -l artifacts/
-          echo -e "\nartifacts/dxf2plasmac-windows-x64:"
+          echo "ARTIFACTS/DXF2PLASMAC-WINDOWS-X64:"
           ls -l artifacts/dxf2plasmac-windows-x64/
-          echo -e "\nartifacts/dxf2plasmac-windows-x64/dxf2PlasmaC"
+          echo "ARTIFACTS/DXF2PLASMAC-WINDOWS-X64/DXF2pLASMAC"
           ls -l artifacts/dxf2plasmac-windows-x64/dxf2PlasmaC/
 
       - name: Place packages in a release directory
