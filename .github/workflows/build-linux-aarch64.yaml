@@ -60,7 +60,7 @@ jobs:
             cp src/dxf2plasmac/assets/dxf2plasmac.png AppDir
 
             # 5. Build ARM build via native architecture compiler binary link
-            wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-aarch64_64.AppImage
+            wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-aarch64.AppImage
             chmod +x appimagetool-aarch64.AppImage
 
             export ARCH=aarch64
