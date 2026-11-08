@@ -267,7 +267,8 @@ jobs:
 
   release:
     name: Prepare release
-    needs: [build-macos-arm64, build-linux-64, build-linux-aarch64, build-windows]
+    # needs: [build-macos-arm64, build-linux-64, build-linux-aarch64, build-windows]
+    needs: [build-macos-arm64, build-linux, build-windows]
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
