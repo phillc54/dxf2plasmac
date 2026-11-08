@@ -220,7 +220,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: dxf2plasmac-windows-${{ matrix.arch }}
+          name: dxf2plasmac-linux-${{ matrix.arch }}
           path: dist/
 
 
