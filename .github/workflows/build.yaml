@@ -178,6 +178,7 @@ jobs:
       - name: List artifact directory
         run: |
           ls -l artifacts/
+          ls -l artifacts/dxf2plasmac-windows-x64/
 
       - name: Place packages in a release directory
         run: |
