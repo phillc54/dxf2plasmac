@@ -7,8 +7,8 @@ import ctkmessagebox2
 block_cipher = None
 
 root = os.getcwd()
-main_script = os.path.join(root, 'src', 'dxf2plasmac', 'main.py')
-assets = os.path.join(root, 'src', 'dxf2plasmac', 'assets')
+main_script = os.path.join(root, 'src', 'main.py')
+assets = os.path.join(root, 'src', 'assets')
 app_icon = os.path.join(assets, 'dxf2plasmac.icns')
 
 datas = [(assets, 'assets')]
@@ -76,5 +76,4 @@ app = BUNDLE(
         'NSAppleScriptEnabled': False,
         'CFBundleShortVersionString': '0.1.0',
     },
-    # target_arch=os.environ.get('MACOS_ARCH', 'x86_64') # Dynamically sets arch via workflow env
 )

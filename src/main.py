@@ -141,8 +141,6 @@ class App(CTk.CTk):
         self.size = (0.0, 0.0)
         self.tt_delay = 0.6 # tooltip delay
 
-        # icon_relative_path = os.path.join('assets', 'icons', 'play.png')
-        # play_icon_path = get_asset_path(icon_relative_path)
         self.icon_path = get_asset_path('assets/icons')
 
 

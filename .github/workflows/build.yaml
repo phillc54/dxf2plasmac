@@ -103,9 +103,9 @@ jobs:
           cp -r dist/dxf2PlasmaC/* AppDir/usr/bin/
           cp build_scripts/my-app.desktop AppDir/
           ln -s usr/bin/dxf2PlasmaC AppDir/AppRun
-          cp src/dxf2plasmac/assets/dxf2plasmac.png AppDir/usr/share/icons/hicolor/256x256/apps/dxf2plasmac.png
-          cp src/dxf2plasmac/assets/dxf2plasmac.png AppDir/.DirIcon
-          cp src/dxf2plasmac/assets/dxf2plasmac.png AppDir/
+          cp src/assets/dxf2plasmac.png AppDir/usr/share/icons/hicolor/256x256/apps/dxf2plasmac.png
+          cp src/assets/dxf2plasmac.png AppDir/.DirIcon
+          cp src/assets/dxf2plasmac.png AppDir/
 
       - name: Download appimagetool and build package
         run: |
