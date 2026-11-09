@@ -25,6 +25,8 @@ from PIL import Image
 from shapely.geometry import Polygon
 
 
+VERSION = '0.1.0'
+
 def get_asset_path(relative_path: str) -> str:
     ''' resolves paths for local pixi development and compiled pyinstaller bundles '''
     try:
@@ -1114,7 +1116,18 @@ class App(CTk.CTk):
 
     def show_about(self, _event):
         title = 'About dxf2plasmac'
-        message = 'It\'s all about me\nVersion 0.1.0'
+        message = (f'Version {VERSION}'
+                   '\n'
+                   '\nA basic converter from dxf to QtPlasmaC G-code'
+                   '\n'
+                   '\nPortions of this software utilize the following:'
+                   '\nLucide Icons <https://lucide.dev>'
+                   '\nezdxf library. <https://github.com/mozman/ezdxf>'
+                   '\nshapely library <https://github.com/shapely/shapely>'
+                   '\npillow library <https://github.com/python-pillow/Pillow>'
+                   '\n'
+                   '\nLicensing for these is can be found in ATTRIBUTIONS.md'
+                  )
         Msg.showinfo(self, title, message)
 
     def create_main_page(self):
