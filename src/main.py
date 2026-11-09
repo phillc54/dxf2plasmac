@@ -142,14 +142,16 @@ class App(CTk.CTk):
         self.tt_delay = 0.6 # tooltip delay
 
         self.icon_path = get_asset_path('assets/icons')
-
+        self.ignored = []#['0', 'centre spot', 'holes', 'open path', 'temp', 'exterior', 'Defpoints']
+        self.layers = []
+        self.doc = ''
 
 
         self.create_main_page()
         self.create_prefs_frame()
-        self.create_materials_frame()
         self.create_main_frame()
         self.create_menu_bar()
+        self.create_side_bar()
         # all widgets instantiated so apply preferences
         self.set_preferences()
 
@@ -166,6 +168,8 @@ class App(CTk.CTk):
         # self.dxf_file = 'testing/screen.dxf'                # noqa:
         # self.dxf_file = 'testing/deer-hideaway.dxf'         # noqa:
         # self.dxf_file = 'testing/no_inners.dxf'             # noqa:
+        self.ignored = []
+        self.layers = []
         self.do_paths()                                     # noqa:
         self.set_external_paths()                           # noqa:
         self.do_shapes()                                    # noqa:
@@ -178,7 +182,11 @@ class App(CTk.CTk):
     def do_paths(self):
         # print('\ndo_paths')
         self.sequences = {'cut': [], 'start': {}, 'external': {}, 'lead-in': {}}
-        self.paths = self.dxf_to_paths(self.dxf_file)
+        # self.paths = self.dxf_to_paths(self.dxf_file)
+        self.doc = self.open_doc(self.dxf_file)
+        self.paths = self.dxf_to_paths(self.doc)
+
+
         for n in self.paths:
             self.sequences['cut'].append(n)
             # circles start at 0 degrees
@@ -269,13 +277,8 @@ class App(CTk.CTk):
 
         return gcode
 
-    def dxf_to_paths(self, dxf_filename):
-        ''' get entities
-            get edges
-            create counter clockwise paths '''
-        paths = {}
+    def open_doc(self, dxf_filename):
         title='File Error'
-        # load data
         try:
             doc = readfile(dxf_filename)
         except OSError:
@@ -290,16 +293,34 @@ class App(CTk.CTk):
             message = f'\n{e}\nWhile attempting to open dxf_filename\n'
             Msg.showerror(self, title, message)
             sys.exit(2)
+        return doc
 
+    # def dxf_to_paths(self, dxf_filename):
+    def dxf_to_paths(self, doc):
+        ''' get entities
+            get edges
+            create counter clockwise paths '''
+        paths = {}
+        # title='File Error'
+        # # load data
+        # try:
+        #     doc = readfile(dxf_filename)
+        # except OSError:
+        #     message='Not a DXF file or a generic I/O error.'
+        #     Msg.showerror(self, title, message)
+        #     sys.exit(1)
+        # except DXFStructureError:
+        #     message='Invalid or corrupted DXF file.'
+        #     Msg.showerror(self, title, message)
+        #     sys.exit(2)
+        # except Exception as e:
+        #     message = f'\n{e}\nWhile attempting to open dxf_filename\n'
+        #     Msg.showerror(self, title, message)
+        #     sys.exit(2)
         # get layers
-
-
-#FIXME - make this user selectable
-        # layers = [l.dxf.name for l in doc.layers]
-        # print(f'layers = {layers}')
-        ignored = []#['0', 'centre spot', 'holes', 'open path', 'temp', 'exterior', 'Defpoints']
-
-
+        if not self.layers:
+            self.layers = [l.dxf.name for l in doc.layers]
+            self.set_layers()
         # try to determine dxf units
         scale = 1
         # $MEASUREMENT (0 = imperial, 1 = metric)
@@ -335,10 +356,10 @@ class App(CTk.CTk):
         # get drawing enities
         msp = doc.modelspace()
         # process lines, splines, polylines, and arcs
-        lines = msp.query('LINE').filter(lambda e: e.dxf.layer not in ignored)
-        splines = msp.query('SPLINE').filter(lambda e: e.dxf.layer not in ignored)
-        polylines=msp.query('LWPOLYLINE POLYLINE').filter(lambda e: e.dxf.layer not in ignored)
-        arcs = msp.query('ARC').filter(lambda e: e.dxf.layer not in ignored)
+        lines = msp.query('LINE').filter(lambda e: e.dxf.layer not in self.ignored)
+        splines = msp.query('SPLINE').filter(lambda e: e.dxf.layer not in self.ignored)
+        polylines=msp.query('LWPOLYLINE POLYLINE').filter(lambda e: e.dxf.layer not in self.ignored)
+        arcs = msp.query('ARC').filter(lambda e: e.dxf.layer not in self.ignored)
         #create edge list
         edges = []
         # create edges from lines
@@ -375,13 +396,25 @@ class App(CTk.CTk):
                             path.append_path(entity_path)
                 paths[n] = path
         # process circles
-        circles = msp.query('CIRCLE').filter(lambda e: e.dxf.layer not in ignored)
+        circles = msp.query('CIRCLE').filter(lambda e: e.dxf.layer not in self.ignored)
         start = len(paths) - 1
         for n, circle in enumerate(circles):
             if len(paths) == self.shapes_to_process:
                 break
             paths[start + n + 1] = {'cp': circle.dxf.center, 'r': circle.dxf.radius}
         return paths
+
+    def set_layers(self):
+        for widget in self.layer_frame.winfo_children():
+            widget.destroy()
+        # self.layers = [l.dxf.name for l in doc.layers]
+        for layer in self.layers:
+            if layer != 'Defpoints':
+                check = CTk.CTkCheckBox(self.layer_frame, text=layer)
+                if layer not in self.ignored:
+                    check.select()
+                check.configure(command=lambda c=check, l=layer: self.toggle_layer(l, c))
+                check.pack(padx=4, pady=(0, 4), expand=True, fill='x', anchor='w')
 
     def set_external_paths(self):
         polygons = {}
@@ -1087,10 +1120,14 @@ class App(CTk.CTk):
                 self.cut_points = pickle.load(f)
                 self.shape_points = pickle.load(f)
                 self.sequences = pickle.load(f)
+                self.ignored = pickle.load(f)
+                self.layers = pickle.load(f)
+            self.dxf_file = ''
             self.loaded_file = str(Path(file).stem)
             self.new_file = True
             self.selected_item = ''
             self.last_cut = (0.0, 0.0)
+            self.set_layers()
             self.do_plot()
 
     def save_project(self, _event):
@@ -1106,6 +1143,8 @@ class App(CTk.CTk):
                 pickle.dump(self.cut_points, f)
                 pickle.dump(self.shape_points, f)
                 pickle.dump(self.sequences, f)
+                pickle.dump(self.ignored, f)
+                pickle.dump(self.layers, f)
 
     def import_dxf(self, _event):
         self.update()
@@ -1120,6 +1159,8 @@ class App(CTk.CTk):
             self.dxf_file = file
             self.loaded_file = str(Path(file).stem)
             self.new_file = True
+            self.ignored = []
+            self.layers = []
             self.do_paths()
             self.set_external_paths()
             self.do_shapes()
@@ -1150,8 +1191,38 @@ class App(CTk.CTk):
         message = 'It\'s all about me\nVersion 0.1.0'
         Msg.showinfo(self, title, message)
 
+    def create_main_page(self):
+        self.main_page = CTk.CTkFrame(self, border_width=0)
+        self.main_page.pack(expand=True, fill='both')
+        self.main_page.grid_rowconfigure(0, weight=1)
+        self.main_page.grid_columnconfigure(0, weight=1)
+
+    def create_main_frame(self):
+        self.main_frame = CTk.CTkFrame(self.main_page, border_width=0)
+        self.main_frame.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        self.main_frame.grid_rowconfigure(1, weight=1)
+        self.main_frame.grid_columnconfigure(1, weight=1)
+        # canvas
+        self.canvas = Canvas(self.main_frame, bg=self.canvas_color, highlightthickness=0)
+        self.canvas.grid(row=1, column=1, padx=(2), pady=2, sticky='nsew')
+        self.canvas.bind('<Double-Button-1>', self.on_mouse_left_double)
+        self.canvas.bind('<Button-1>', self.on_mouse_left_press)
+        self.canvas.bind('<B1-Motion>', self.on_mouse_drag)
+        self.canvas.bind('<MouseWheel>', self.on_mousewheel)
+        self.canvas.bind('<Button-4>', self.on_mousewheel)
+        self.canvas.bind('<Button-5>', self.on_mousewheel)
+        self.canvas.bind('<Configure>', self.canvas_resized)
+
+        mat = CTk.CTkFrame(self.main_frame)
+        mat.grid(row=2, column=0, columnspan=2, sticky='w')
+        mat.grid_columnconfigure(1, weight=1)
+        label_material = CTk.CTkLabel(mat, text='Material:', width=80, anchor='e')
+        label_material.grid(row=0, column=0, padx=4, pady=(4, 0), sticky='ew')
+        self.material_select = CTk.CTkOptionMenu(mat, width=240, variable=self.material_var, values=['None'], command=self.material_selected, anchor='w')
+        self.material_select.grid(row=0, column=1, padx=4, pady=0, sticky='nsew')
+
     def create_menu_bar(self):
-        menu = CTk.CTkFrame(self.main_frame, bg_color='gray25')
+        menu = CTk.CTkFrame(self.main_frame)
         menu.grid(row=0, column=0, columnspan=2, sticky='ew')
         menu.grid_columnconfigure(8, weight=1)
         size = 36
@@ -1175,26 +1246,26 @@ class App(CTk.CTk):
         spl.image = sp
         spl.bind('<Button-1>', self.save_project)
         spl.grid(row=0, column=3, padx=(4, 0), pady=(2, 0))
-        t = CTk.CTkImage(Image.open(f'{self.icon_path}/tools.png'), size=(size, size))
-        tl = CTk.CTkLabel(master = menu, image=t, width=size, height=size, bg_color='gray60', text='')
-        tl.image = t
-        tl.bind('<Button-1>', self.show_materials_frame)
-        tl.grid(row=0, column=4, padx=(24, 0), pady=(2, 0))
+        # t = CTk.CTkImage(Image.open(f'{self.icon_path}/tools.png'), size=(size, size))
+        # tl = CTk.CTkLabel(master = menu, image=t, width=size, height=size, bg_color='gray60', text='')
+        # tl.image = t
+        # tl.bind('<Button-1>', self.show_materials_frame)
+        # tl.grid(row=0, column=4, padx=(24, 0), pady=(2, 0))
         si = CTk.CTkImage(Image.open(f'{self.icon_path}/settings.png'), size=(size, size))
         sl = CTk.CTkLabel(master = menu, image=si, width=size, height=size, bg_color='gray60', text='')
         sl.image = si
         sl.bind('<Button-1>', self.show_preferences_frame)
-        sl.grid(row=0, column=5, padx=(4, 0), pady=(2, 0))
+        sl.grid(row=0, column=5, padx=(24, 0), pady=(2, 0))
         a = CTk.CTkImage(Image.open(f'{self.icon_path}/info.png'), size=(size, size))
         al = CTk.CTkLabel(master = menu, image=a, width=size, height=size, bg_color='gray60', text='')
         al.image = a        # al = CTk.CTkLabel(master = menu, image=(f'{self.icon_path}/info.png', size, size), width=size, height=size, bg_color='gray60', text='')
         al.bind('<Button-1>', self.show_about)
         al.grid(row=0, column=6, padx=(24, 0), pady=(2, 0))
-        hr = CTk.CTkImage(Image.open(f'{self.icon_path}/smiley.png'), size=(size, size))
-        hrl = CTk.CTkLabel(master = menu, image=hr, width=size, height=size, bg_color='gray60', text='')
-        hrl.image = hr
-        hrl.bind('<Button-1>', self.toggle_rapids)
-        hrl.grid(row=0, column=7, padx=(24, 0), pady=(2, 0))
+        # hr = CTk.CTkImage(Image.open(f'{self.icon_path}/smiley.png'), size=(size, size))
+        # hrl = CTk.CTkLabel(master = menu, image=hr, width=size, height=size, bg_color='gray60', text='')
+        # hrl.image = hr
+        # hrl.bind('<Button-1>', self.toggle_rapids)
+        # hrl.grid(row=0, column=7, padx=(24, 0), pady=(2, 0))
         za = CTk.CTkImage(Image.open(f'{self.icon_path}/zoom_all.png'), size=(size, size))
         zal = CTk.CTkLabel(master = menu, image=za, width=size, height=size, bg_color='gray60', text='')
         zal.image = za
@@ -1231,32 +1302,61 @@ class App(CTk.CTk):
         pdl.bind('<Button-1>', self.pan_down)
         pdl.grid(row=0, column=15, padx=(4, 2), pady=(2, 0))
 
-    def create_main_page(self):
-        self.main_page = CTk.CTkFrame(self, border_width=0)
-        self.main_page.pack(expand=True, fill='both')
-        self.main_page.grid_rowconfigure(0, weight=1)
-        self.main_page.grid_columnconfigure(0, weight=1)
+    def create_side_bar(self):
+        side = CTk.CTkFrame(self.main_frame)
+        side.grid(row=1, column=0, sticky='ns')
+        side.grid_rowconfigure((2, 4), weight=1)
+        kerf = CTk.CTkLabel(side, text='Layers')#, anchor='w')
+        kerf.grid(row=0, column=0, columnspan=2, padx=(4, 2), pady=(4, 2), sticky='new')
+        self.layer_frame = CTk.CTkFrame(side, width=100, fg_color='transparent')
+        self.layer_frame.grid(row=1, column=0, columnspan=2, sticky='new')
 
-    def create_main_frame(self):
-        self.main_frame = CTk.CTkFrame(self.main_page, border_width=0)
-        self.main_frame.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-        self.main_frame.grid_rowconfigure(1, weight=1)
-        self.main_frame.grid_columnconfigure(1, weight=1)
-        # canvas
-        self.canvas = Canvas(self.main_frame, bg=self.canvas_color, highlightthickness=0)
-        self.canvas.grid(row=1, column=1, padx=(2), pady=2, sticky='nsew')
-        self.canvas.bind('<Double-Button-1>', self.on_mouse_left_double)
-        self.canvas.bind('<Button-1>', self.on_mouse_left_press)
-        self.canvas.bind('<B1-Motion>', self.on_mouse_drag)
-        self.canvas.bind('<MouseWheel>', self.on_mousewheel)
-        self.canvas.bind('<Button-4>', self.on_mousewheel)
-        self.canvas.bind('<Button-5>', self.on_mousewheel)
-        self.canvas.bind('<Configure>', self.canvas_resized)
+        check = CTk.CTkCheckBox(side, text='Rapids')
+        check.select()
+        # check.configure(command=lambda c=check, l=layer: self.toggle_layer(l, c))
+        check.configure(command=self.toggle_rapids)
+        check.grid(row=3, column=0, columnspan=2, padx=(4, 2), pady=(4, 2), sticky='new')
 
-    def toggle_rapids(self, _event):
-        state = 'hidden' if self.show_rapids else 'normal'
-        self.canvas.itemconfig('rapid', state=state)
-        self.show_rapids = not self.show_rapids
+        ew = 48 # entry width
+        row = 5
+        kerf = CTk.CTkLabel(side, text='Kerf Width:', anchor='e')
+        kerf.grid(row=row, column=0, padx=(4, 2), pady=(4, 2), sticky='nsew')
+        kerf_entry = CTk.CTkEntry(side, textvariable=self.kerf_var, width=ew, border_width=1)
+        kerf_entry.grid(row=row, column=1, padx=(2, 4), pady=(4, 2), sticky='nsew')
+        row += 1
+        feed = CTk.CTkLabel(side, text='Cut Speed:', anchor='e')
+        feed.grid(row=row, column=0, padx=(4, 2), pady=2, sticky='nsew')
+        feed_entry = CTk.CTkEntry(side, textvariable=self.feed_r_var, width=ew, border_width=1)
+        feed_entry.grid(row=row, column=1, padx=(2, 4), pady=2, sticky='nsew')
+        row += 1
+        cut_h = CTk.CTkLabel(side, text='Cut Height:', anchor='e')
+        cut_h.grid(row=row, column=0, padx=(4, 2), pady=2, sticky='nsew')
+        cut_h_entry = CTk.CTkEntry(side, textvariable=self.cut_h_var, width=ew, border_width=1)
+        cut_h_entry.grid(row=row, column=1, padx=(2, 4), pady=2, sticky='nsew')
+        row += 1
+        pierce_h = CTk.CTkLabel(side, text='Pierce Height:', anchor='e')
+        pierce_h.grid(row=row, column=0, padx=(4, 2), pady=2, sticky='nsew')
+        pierce_h_entry = CTk.CTkEntry(side, textvariable=self.pierce_h_var, width=ew, border_width=1)
+        pierce_h_entry.grid(row=row, column=1, padx=(2, 4), pady=2, sticky='nsew')
+        row += 1
+        pierce_d = CTk.CTkLabel(side, text='Pierce Delay:', anchor='e')
+        pierce_d.grid(row=row, column=0, padx=(4, 2), pady=2, sticky='nsew')
+        pierce_d_entry = CTk.CTkEntry(side, textvariable=self.pierce_d_var, width=ew, border_width=1)
+        pierce_d_entry.grid(row=row, column=1, padx=(2, 4), pady=2, sticky='nsew')
+        if self.material_file:
+            self.load_material_file()
+        else:
+            if self.units == 'metric':
+                self.kerf_var.set(1)
+                self.feed_r_var.set(1000)
+                self.cut_h_var.set(1)
+                self.pierce_h_var.set(3)
+            else:
+                self.kerf_var.set(0.04)
+                self.feed_r_var.set(250)
+                self.cut_h_var.set(0.04)
+                self.pierce_h_var.set(0.12)
+            self.pierce_d_var.set(1)
 
     def create_prefs_frame(self):
         # preferences frame, blank frame to cover the window
@@ -1362,72 +1462,6 @@ class App(CTk.CTk):
         close = CTk.CTkButton(action, text='Close', width=bw, command=self.close_prefs)
         close.grid(row=0, column=4, padx=(0,4), pady=4, sticky='nsew')
 
-    # create materials page
-    def create_materials_frame(self):
-        # preferences frame, blank frame to cover the window
-        self.materials_frame = CTk.CTkFrame(self.main_page)
-        self.materials_frame.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-        self.materials_frame.grid_rowconfigure(0, weight=1)
-        self.materials_frame.grid_columnconfigure(0, weight=1)
-        materials = CTk.CTkFrame(self.materials_frame, border_width=1, fg_color='transparent')
-        materials.place(relx=0.5, rely=0.5, anchor='center')
-        materials.grid_columnconfigure((0, 1), weight=1, uniform='materials')
-        # button width
-        bw = 80
-        row = 0
-        label_material = CTk.CTkLabel(materials, text='Material')
-        label_material.grid(row=row, column=0, columnspan=2, padx=4, pady=(4, 0), sticky='ew')
-        self.material_select = CTk.CTkOptionMenu(materials, width=60, variable=self.material_var, values=['None'], command=self.material_selected, anchor='e')
-        self.material_select.grid(row=row + 1, column=0, columnspan=2, padx=4, pady=0, sticky='nsew')
-        row += 2
-        kerf = CTk.CTkLabel(materials, text='Kerf Width:', anchor='e')
-        kerf.grid(row=row, column=0, padx=(4, 2), pady=(4, 2), sticky='nsew')
-        kerf_entry = CTk.CTkEntry(materials, textvariable=self.kerf_var, border_width=1)
-        kerf_entry.grid(row=row, column=1, padx=(2, 4), pady=(4, 2), sticky='nsew')
-        row += 1
-        feed = CTk.CTkLabel(materials, text='Cut Speed:', anchor='e')
-        feed.grid(row=row, column=0, padx=(4, 2), pady=2, sticky='nsew')
-        feed_entry = CTk.CTkEntry(materials, textvariable=self.feed_r_var, border_width=1)
-        feed_entry.grid(row=row, column=1, padx=(2, 4), pady=2, sticky='nsew')
-        row += 1
-        cut_h = CTk.CTkLabel(materials, text='Cut Height:', anchor='e')
-        cut_h.grid(row=row, column=0, padx=(4, 2), pady=2, sticky='nsew')
-        cut_h_entry = CTk.CTkEntry(materials, textvariable=self.cut_h_var, border_width=1)
-        cut_h_entry.grid(row=row, column=1, padx=(2, 4), pady=2, sticky='nsew')
-        row += 1
-        pierce_h = CTk.CTkLabel(materials, text='Pierce Height:', anchor='e')
-        pierce_h.grid(row=row, column=0, padx=(4, 2), pady=2, sticky='nsew')
-        pierce_h_entry = CTk.CTkEntry(materials, textvariable=self.pierce_h_var, border_width=1)
-        pierce_h_entry.grid(row=row, column=1, padx=(2, 4), pady=2, sticky='nsew')
-        row += 1
-        pierce_d = CTk.CTkLabel(materials, text='Pierce Delay:', anchor='e')
-        pierce_d.grid(row=row, column=0, padx=(4, 2), pady=2, sticky='nsew')
-        pierce_d_entry = CTk.CTkEntry(materials, textvariable=self.pierce_d_var, border_width=1)
-        pierce_d_entry.grid(row=row, column=1, padx=(2, 4), pady=2, sticky='nsew')
-        row += 1
-        # action buttons
-        action = CTk.CTkFrame(materials, fg_color='transparent')
-        action.columnconfigure((0, 1, 2, 3), weight=1, uniform='action')
-        action.grid(row=row, column=0, columnspan=2, sticky='sew', padx=4, pady=(20, 4))
-        apply = CTk.CTkButton(action, text='Apply', width=bw, command=self.apply_materials)
-        apply.grid(row=0, column=0, sticky='ew')
-        close = CTk.CTkButton(action, text='Close', width=bw, command=self.close_materials)
-        close.grid(row=0, column=3, sticky='ew')
-        if self.material_file:
-            self.load_material_file()
-        else:
-            if self.units == 'metric':
-                self.kerf_var.set(1)
-                self.feed_r_var.set(1000)
-                self.cut_h_var.set(1)
-                self.pierce_h_var.set(3)
-            else:
-                self.kerf_var.set(0.04)
-                self.feed_r_var.set(250)
-                self.cut_h_var.set(0.04)
-                self.pierce_h_var.set(0.12)
-            self.pierce_d_var.set(1)
-
     def set_material_file(self, _event):
         i_dir = Path(self.material_file).parent if self.material_file else self.current_path
         i_file = self.material_file_var.get()
@@ -1464,6 +1498,23 @@ class App(CTk.CTk):
 
     def close_materials(self):
         self.materials_frame.lower()
+
+    def toggle_layer(self, l, e):
+        if e.get():
+            self.ignored.remove(l)
+        else:
+            self.ignored.append(l)
+        self.do_paths()
+        self.set_external_paths()
+        self.do_shapes()
+        self.do_offsets()
+        self.do_plot()
+        self.zoom_all()
+
+    def toggle_rapids(self):
+        state = 'hidden' if self.show_rapids else 'normal'
+        self.canvas.itemconfig('rapid', state=state)
+        self.show_rapids = not self.show_rapids
 
     def set_color(self, widget, title='title'):
         color = Color(title=f'Choose A {title} Color', initial_color=widget.cget('fg_color')).get()
