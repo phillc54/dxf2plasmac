@@ -2,6 +2,7 @@ __pycache__/
 build/
 dist/
 .pixi/
+pixi.lock
 
 old/
 testing/
