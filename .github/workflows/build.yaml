@@ -162,9 +162,81 @@ jobs:
           path: dist/
 
 
+#   release:
+#     name: Prepare release
+#     needs: [build-macos-arm64, build-linux, build-windows]
+#     runs-on: ubuntu-24.04
+#     steps:
+#       - name: Download all artifacts
+#         uses: actions/download-artifact@v8
+#         with:
+#           path: artifacts
+#
+#       - name: Place packages in a release directory
+#         run: |
+#           mkdir release
+#           cp artifacts/macos-arm64-dmg/dxf2PlasmaC-Mac-arm64.dmg release/
+#           cp artifacts/dxf2plasmac-linux-x86_64/dxf2PlasmaC-Linux-x86_64.AppImage release/
+#           cp artifacts/dxf2plasmac-linux-aarch64/dxf2PlasmaC-Linux-aarch64.AppImage release/
+#           cp artifacts/dxf2plasmac-windows-x64/dxf2PlasmaC-Setup.exe release/dxf2PlasmaC-Windows-x64-Setup.exe
+#           cp artifacts/dxf2plasmac-windows-arm64/dxf2PlasmaC-Setup.exe release/dxf2PlasmaC-Windows-arm64-Setup.exe
+#
+#       - name: Publish to github repo
+#         uses: softprops/action-gh-release@v3
+#         with:
+#           tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
+#           generate_release_notes: false
+#           body: |
+#             - None of these packages are signed.
+#
+#             - macOS packages requires the following after installing:
+#               xattr -dr com.apple.quarantine /Applications/dxf2PlasmaC.app
+#           files:
+#             release/*
+#         env:
+#           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+
+  wait-or-timeout:
+    runs-on: ubuntu-24-04
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      MAX_WAIT_MINUTES: 30
+    steps:
+      - name: Guard Loop with Timeout
+        run: |
+          SHA="${{ github.sha }}"
+          REPO="${{ github.repository }}"
+          CURRENT_RUN_ID="${{ github.run_id }}"
+          START_TIME=$(date +%s)
+          TIMEOUT_SECONDS=$((MAX_WAIT_MINUTES * 60))
+          echo "Watching workflow runs for commit $SHA..."
+          echo "Will timeout and proceed after $MAX_WAIT_MINUTES minutes."
+          while true; do
+            # Check if our own current run still has other active jobs left in 'build-packages'
+            # (Filtering for jobs that are not 'completed' yet)
+            ACTIVE_JOBS=$(gh api /repos/$REPO/actions/runs/$CURRENT_RUN_ID/jobs \
+              --jq '.jobs[] | select(.name | contains("build-packages")) | select(.status != "completed") | .name' || true)
+            if [ -z "$ACTIVE_JOBS" ]; then
+              echo "✅ All packages have finished building!"
+              break
+            fi
+            # Check elapsed time
+            CURRENT_TIME=$(date +%s)
+            ELAPSED=$((CURRENT_TIME - START_TIME))
+            if [ $ELAPSED -ge $TIMEOUT_SECONDS ]; then
+              echo "⚠️ Timeout reached! Proceeding to release whatever is ready, even though some jobs are incomplete."
+              echo "Still pending or running: $ACTIVE_JOBS"
+              break
+            fi
+            echo "Waiting for builds to finish... (${ELAPSED}s / ${TIMEOUT_SECONDS}s elapsed)"
+            sleep 30
+          done
+
+
   release:
     name: Prepare release
-    needs: [build-macos-arm64, build-linux, build-windows]
+    needs: [wait-or-timeout]
     runs-on: ubuntu-24.04
     steps:
       - name: Download all artifacts
@@ -175,11 +247,21 @@ jobs:
       - name: Place packages in a release directory
         run: |
           mkdir release
-          cp artifacts/macos-arm64-dmg/dxf2PlasmaC-Mac-arm64.dmg release/
+          if [ -f "artifacts/macos-arm64-dmg/dxf2PlasmaC-Mac-arm64.dmg"]: then
+            cp artifacts/macos-arm64-dmg/dxf2PlasmaC-Mac-arm64.dmg release/
+          fi
+          if [ -f "artifacts/dxf2plasmac-linux-x86_64/dxf2PlasmaC-Linux-x86_64.AppImage"]: then
           cp artifacts/dxf2plasmac-linux-x86_64/dxf2PlasmaC-Linux-x86_64.AppImage release/
-          cp artifacts/dxf2plasmac-linux-aarch64/dxf2PlasmaC-Linux-aarch64.AppImage release/
-          cp artifacts/dxf2plasmac-windows-x64/dxf2PlasmaC-Setup.exe release/dxf2PlasmaC-Windows-x64-Setup.exe
-          cp artifacts/dxf2plasmac-windows-arm64/dxf2PlasmaC-Setup.exe release/dxf2PlasmaC-Windows-arm64-Setup.exe
+          fi
+          if [ -f "artifacts/dxf2plasmac-linux-aarch64/dxf2PlasmaC-Linux-aarch64.AppImage"]: then
+            cp artifacts/dxf2plasmac-linux-aarch64/dxf2PlasmaC-Linux-aarch64.AppImage release/
+          fi
+          if [ -f "artifacts/dxf2plasmac-windows-x64/dxf2PlasmaC-Setup.exe"]: then
+            cp artifacts/dxf2plasmac-windows-x64/dxf2PlasmaC-Setup.exe release/dxf2PlasmaC-Windows-x64-Setup.exe
+          fi
+          if [ -f "artifacts/dxf2plasmac-windows-arm64/dxf2PlasmaC-Setup.exe"]: then
+            cp artifacts/dxf2plasmac-windows-arm64/dxf2PlasmaC-Setup.exe release/dxf2PlasmaC-Windows-arm64-Setup.exe
+          fi
 
       - name: Publish to github repo
         uses: softprops/action-gh-release@v3
