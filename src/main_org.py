@@ -19,9 +19,9 @@ from CTkColorPicker import AskColor as Color
 from PIL import Image
 
 # from .dxf_to_paths import get_paths
-from .gcode import write_gcode
-from .path_to_points import get_points
-from .dxf_to_plasmac import ToPaths, ToPoints
+# from .gcode import write_gcode
+# from .path_to_points import get_points
+from .dxf_to_plasmac import ToGcode, ToPaths, ToPoints
 
 VERSION = '0.1.0'
 
@@ -644,59 +644,27 @@ class App(CTk.CTk):
             self.loaded_file = str(Path(file).stem)
             self.new_file = True
             self.ignored = []
-            # self.layers = []
-            # self.get_paths()
-            # self.set_external_paths()
-            # self.get_shape_points()
-            # self.get_cut_points()
-            # self.doc, self.layers, self.paths, self.sequences, self.size, self.error = get_paths(self.dxf_file, self.units, self.gap_tolerance, self.lead_type, self.lead_length, self.lead_angle)
-            # self.doc, self.layers, self.paths, self.sequences, self.size, self.error = ToPaths.get_paths(self.dxf_file, self.units, self.gap_tolerance, self.lead_type, self.lead_length, self.lead_angle)
-
-            # self.converter = ToPaths(units=self.units,
-            #                     gap_tolerance=self.gap_tolerance,
-            #                     lead_type=self.lead_type,
-            #                     lead_length=self.lead_length,
-            #                     lead_angle=self.lead_angle )
             self.converter = ToPaths(self.units, self.gap_tolerance, self.lead_type, self.lead_length, self.lead_angle)
             self.doc, self.layers, self.paths, self.sequences, self.size, self.error = self.converter.get_paths(self.dxf_file)
-
-
-
+            if self.error:
+                title = 'File Open Error'
+                Msg.showerror(self, title, self.error)
+                return
             self.create_layer_widgets()
-
             post = 'mm' if self.units == 'metric' else 'in'
             self.title(f'{self.title()}     Size: {self.size[0]}{post} x {self.size[1]}{post}')
-            if self.error:
-                print(f'self.error={self.error}')
-                return
-
-            # self.shape_points, warnings  = get_points('shape', self.paths, self.layers, self.sequences, self.kerf_var.get(), self.precision, self.small_hole, self.last_cut, self.lead_angle, self.flattening_distance)
-            sp = ToPoints()
-            self.shape_points, warnings = sp.get_points('shape', self.paths, self.layers, self.sequences, self.kerf_var.get(), self.precision, self.small_hole, self.last_cut, self.lead_angle, self.flattening_distance)
-            if warnings:
-                print('\nSHAPE WARNINGS:')
-                for w in warnings:
-                    print(w)
-
-            self.get_cut_points()
-            # self.cut_points, warnings = get_points('cut', self.paths, self.layers, self.sequences, self.kerf_var.get(), self.precision, self.small_hole, self.last_cut, self.lead_angle, self.flattening_distance)
-            # if warnings:
-            #     print('\nCUT WARNINGS:')
-            #     for w in warnings:
-            #         print(w)
-
+            self.shape_points = self.get_points('shape')
+            self.cut_points = self.get_points('cut')
             self.do_plot()
 
-
-    def get_cut_points(self):
-        sp = ToPoints()
-        # self.cut_points, warnings = get_points('cut', self.paths, self.layers, self.sequences, self.kerf_var.get(), self.precision, self.small_hole, self.last_cut, self.lead_angle, self.flattening_distance)
-        self.cut_points, warnings = sp.get_points('cut', self.paths, self.layers, self.sequences, self.kerf_var.get(), self.precision, self.small_hole, self.last_cut, self.lead_angle, self.flattening_distance)
+    def get_points(self, mode):
+        sp = ToPoints(self.paths, self.layers, self.sequences, self.kerf_var.get(), self.precision, self.small_hole, self.last_cut, self.lead_angle, self.flattening_distance)
+        points, warnings = sp.get_points(mode)
         if warnings:
-            print('\nCUT WARNINGS:')
-            for w in warnings:
-                print(w)
-
+            title = 'Cut Warnings'
+            message = "\n".join(warnings)
+            Msg.showwarning(self, title, message)
+        return points
 
     def export_gcode(self, _event):
         file = Save(parent=self,
@@ -713,7 +681,12 @@ class App(CTk.CTk):
             material['ch'] = self.cut_h_var.get()
             material['fr'] = self.feed_r_var.get()
             material['kw'] = self.kerf_var.get()
-            write_gcode(file, self.cut_points, self.layers, self.sequences, self.ignored, self.small_hole, self.units, self.precision, material)
+            # write_gcode(file, self.cut_points, self.layers, self.sequences, self.ignored, self.small_hole, self.units, self.precision, material)
+            # for point in self.cut_points:
+            #     for p in point:
+            #         print(f'\npoint{point}: p{p}: {self.cut_points[point][p]}')
+            gc = ToGcode(self.cut_points, self.layers, self.sequences, self.ignored, self.precision)
+            gc.write_gcode(file, self.small_hole, self.units, material)
 
     def show_preferences_frame(self, _event):
         self.prefs_frame.lift()

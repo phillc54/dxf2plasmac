@@ -1,3 +1,7 @@
+import math
+from datetime import datetime
+from pathlib import Path
+
 from ezdxf import bbox, edgeminer, edgesmith, transform
 from ezdxf.entities.lwpolyline import LWPolyline
 from ezdxf.entities.polyline import Polyline
@@ -5,7 +9,13 @@ from ezdxf.filemanagement import readfile
 from ezdxf.groupby import groupby
 from ezdxf.lldxf.const import DXFError, DXFStructureError
 from ezdxf.math import Matrix44, Vec2, is_point_in_polygon_2d
-from ezdxf.path import Path, make_path
+from ezdxf.path import Path as ezPath
+from ezdxf.path import make_path
+from shapely import BufferJoinStyle
+from shapely.geometry import MultiPolygon, Polygon
+
+epsilon = 1e-6
+join_style = BufferJoinStyle.round # round, mitre, or bevel
 
 
 class ToPaths:
@@ -17,7 +27,6 @@ class ToPaths:
         self.lead_length = lead_length
         self.lead_angle = lead_angle
         self.flattening_distance = flattening_distance
-
         self.doc = None
         self.layers = []
         self.paths = {}
@@ -67,7 +76,7 @@ class ToPaths:
         return self.doc, self.layers, self.paths, self.sequences, self.size, self.error
 
     def _open_doc(self, dxf_file):
-        ''' oen a dxf file '''
+        ''' open a dxf file '''
         try:
             self.doc = readfile(dxf_file)
         except OSError:
@@ -144,7 +153,7 @@ class ToPaths:
                 chains = edgeminer.find_all_simple_chains(deposit)
                 # make a path from each chain
                 for n, chain in enumerate(chains):
-                    path = Path()
+                    path = ezPath()
                     for edge in chain:
                         entity = edge.payload
                         if entity:
@@ -218,34 +227,34 @@ class ToPoints:
         points = {}
         last_cut = (0.0, 0.0)
         warnings = []
-        print(f'layers = {self.layers}')
+        print(f'mode={mode}  layers={self.layers}')
         for layer in self.layers:
             points[layer] = {}
-            for n in sequences[layer]['cut']:
-                points[layer][n], last_cut, warnings_in = self.path_to_points(cut, paths[layer][n], layer, sequences, n, kerf, precision, small_hole, last_cut, lead_angle, flattening_distance)
+            for n in self.sequences[layer]['cut']:
+                points[layer][n], last_cut, warnings_in = self._path_to_points(cut, self.paths[layer][n], layer, n, last_cut)
                 warnings.extend(warnings_in)
 
         return points, warnings
 
-    def path_to_points(self, cut, path, layer, sequences, path_num, kerf, precision, small_hole, last_cut, lead_angle, flattening_distance):
-        external_cut = sequences[layer]['external'][path_num]
-        offset = float(kerf) / 2 if external_cut else float(kerf) / -2
-        l_length = sequences[layer]['lead-in'][path_num]['length']
-        l_angle = sequences[layer]['lead-in'][path_num]['angle']
-        arc_lead = sequences[layer]['lead-in'][path_num]['type'] == 'arc'
+    def _path_to_points(self, cut, path, layer, path_num, last_cut):
+        external_cut = self.sequences[layer]['external'][path_num]
+        offset = float(self.kerf) / 2 if external_cut else float(self.kerf) / -2
+        l_length = self.sequences[layer]['lead-in'][path_num]['length']
+        l_angle = self.sequences[layer]['lead-in'][path_num]['angle']
+        arc_lead = self.sequences[layer]['lead-in'][path_num]['type'] == 'arc'
         points_dict = {}
         warnings = []
         # circles
         if isinstance(path, dict):
             # circle center point
-            xc = round(path['cp'][0], precision)
-            yc = round(path['cp'][1], precision)
+            xc = round(path['cp'][0], self.precision)
+            yc = round(path['cp'][1], self.precision)
             # cut path
             if cut:
                     # base angle for lead-ins
-                ang = sequences[layer]['start'][path_num]
+                ang = self.sequences[layer]['start'][path_num]
                 # set radius to cut path rather than shape
-                r = round(path['r'], precision) + offset
+                r = round(path['r'], self.precision) + offset
                 # lead-in cannot be greater than radius
                 ll = min(l_length, r)
                 # external is clockwise
@@ -255,7 +264,7 @@ class ToPoints:
                 xs = xc + r * math.cos(math.radians(ang))
                 ys = yc + r * math.sin(math.radians(ang))
                 # small internal hole
-                if r < small_hole / 2 and not external_cut:
+                if r < self.small_hole / 2 and not external_cut:
                     # leadin start
                     xl = xs - ll * math.cos(math.radians(ang))
                     yl = ys - ll * math.sin(math.radians(ang))
@@ -263,7 +272,7 @@ class ToPoints:
                     points_dict[0] = {'seg': 0, 'start': last_cut, 'end': (xl, yl)}
                     points_dict[1] = {'seg': 1, 'start': (xl, yl), 'end': (xs, ys)}
                     points_dict[2] = {'seg': 2, 'start': (xs, ys), 'end': (xs, ys), 'cp': (xc, yc), 'r': r, 'g': g}
-                    sequences[layer]['lead-in'][path_num]['type'] = 'line'
+                    self.sequences[layer]['lead-in'][path_num]['type'] = 'line'
                 else:
                     # get radius for correct lead-in length
                     lr = 2 * ll / math.pi
@@ -303,7 +312,7 @@ class ToPoints:
             # these are to keep pyright quiet
             lxc, lyc, lsa, lr = 0.0, 0.0, 0.0, 0.0
             # create list of vertexes
-            vertices = list(path.flattening(distance=flattening_distance))
+            vertices = list(path.flattening(distance=self.flattening_distance))
             # offset every vertex and set cut direction if this is a closed cut
             if cut and path.is_closed:
                 poly = Polygon(vertices).buffer(0)
@@ -329,8 +338,8 @@ class ToPoints:
             seg_list = list(range(len(segments)))
             s_list = []
             if cut:
-                idx = sequences[layer]['start'][path_num]
-                sequences[layer]['lead-in'][path_num]['valid'] = True
+                idx = self.sequences[layer]['start'][path_num]
+                self.sequences[layer]['lead-in'][path_num]['valid'] = True
                 if idx==0:
                     default = True # use default start segment
                     idx=2
@@ -346,7 +355,7 @@ class ToPoints:
                     # radius for arc leadin
                     lr = 2 * l_length / math.pi
                     # offset for line leadin
-                    ll = l_length * math.sin(math.radians(lead_angle))
+                    ll = l_length * math.sin(math.radians(self.lead_angle))
                     # base offset distance
                     offset = lr if arc_lead else ll
                     # loop until leadin fits
@@ -395,7 +404,7 @@ class ToPoints:
                                 # check leadin start distance from cut
                                 leadins_poly = [Vec2(x, y) for x, y in poly.exterior.coords]
                                 if is_point_in_polygon_2d(Vec2(lxs, lys), leadins_poly) == side:
-                                    sequences[layer]['start'][path_num] = idx
+                                    self.sequences[layer]['start'][path_num] = idx
                                     valid = True
                                     break
                             # valid lead-in so complete the cut
@@ -405,16 +414,16 @@ class ToPoints:
                             # this run didn't work
                             if idx == len(segments):
                                 # less than kerf away so fail
-                                if offset - float(kerf) < epsilon:
+                                if offset - float(self.kerf) < epsilon:
                                     warnings.append(f'Could not find valid lead-in for cut {path_num}')
-                                    sequences[layer]['lead-in'][path_num]['valid'] = False
+                                    self.sequences[layer]['lead-in'][path_num]['valid'] = False
                                     idx = 2
-                                    sequences[layer]['start'][path_num] = idx
+                                    self.sequences[layer]['start'][path_num] = idx
                                     break
                                 # decrease the test distance and go again
                                 else:
-                                    offset -= float(kerf)
-                                    offset = max(offset, float(kerf))
+                                    offset -= float(self.kerf)
+                                    offset = max(offset, float(self.kerf))
                                     idx = 2
                         else:
                             break
@@ -430,17 +439,97 @@ class ToPoints:
             for n, s in enumerate(lst):
                 if segments[s]:
                     points_dict[n] = {'seg': s,
-                                        'start': (round(segments[s][0][0], precision), round(segments[s][0][1], precision)),
-                                        'end': (round(segments[s][1][0], precision), round(segments[s][1][1], precision))}
+                                        'start': (round(segments[s][0][0], self.precision), round(segments[s][0][1], self.precision)),
+                                        'end': (round(segments[s][1][0], self.precision), round(segments[s][1][1], self.precision))}
                     if cut and s == 1 and arc_lead:
-                        points_dict[n]['cp'] = (round(lxc, precision), round(lyc, precision))
-                        points_dict[n]['r'] = round(lr, precision)
-                        points_dict[n]['sa'] = round(lsa, precision)
+                        points_dict[n]['cp'] = (round(lxc, self.precision), round(lyc, self.precision))
+                        points_dict[n]['r'] = round(lr, self.precision)
+                        points_dict[n]['sa'] = round(lsa, self.precision)
                         points_dict[n]['e'] = 90.0
                         points_dict[n]['g'] = 3
                 else:
                     points_dict[n] = {'seg': s}
         last_cut = points_dict[len(points_dict)-1]['end']
-        last_cut = (round(last_cut[0], precision),
-                            round(last_cut[1], precision))
+        last_cut = (round(last_cut[0], self.precision),
+                            round(last_cut[1], self.precision))
         return points_dict, last_cut, warnings
+
+
+class ToGcode:
+    def __init__(self, points, layers, sequences, ignored, precision):
+        self.points = points
+        self.layers = layers
+        self.sequences = sequences
+        self.ignored = ignored
+        # self.small_hole = small_hole
+        # self.units = units
+        self.precision = precision
+        # self.material = material
+
+    def write_gcode(self, gcode_file, small_hole, units, material):
+        unit = 'G21 ; units in millimeters' if units == 'metric' else 'G20 ; units in inches'
+        blend = 0.1 if units == 'metric' else 0.004
+        amble = (f'{unit}\n'
+                    'G40 ; cancel cutter compensation\n'
+                    'G49 ; cancel tool compensation\n'
+                    f'G64 P{blend} ; path blending tolerance\n'
+                    'G80 ; cancel canned cycle\n'
+                    'G90 ; absolute positioning\n'
+                    'G92.1 ; cancel G92 offsets\n'
+                    'G94 ; feed rate = units per minute\n'
+                    'G97 ; spindle mode = rpm')
+        gcode = [f'; {Path(gcode_file).name} by dxf2PlasmaC',
+                    f'; {str(datetime.now()).rsplit(':', 1)[0]}',
+                    '',
+                    '; configure a temporary material',
+                    f'(o=0, nu={material['nu']}, na={material['na']}, ph={material['ph']}, pd={material['pd']}, ch={material['ch']}, fr={material['fr']}, kw={material['kw']})',
+                    '',
+                    '#<h_velocity> = 60 ; small hole velocity = 60%',
+                    f'#<h_diameter> = {small_hole} ; small hole diameter',
+                    '#<holes> = 1 ; reduce velocity  for small holes',
+                    '',
+                    f'{amble}',
+                    '',
+                    'F#<_hal[plasmac.cut-feed-rate]> ; set feed rate']
+        for layer in self.layers:
+            if layer not in self.ignored:
+                for n, point in enumerate(self.sequences[layer]['cut']):
+                    gcode.append(f'\n;start of layer {layer}, cut #{n + 1}')
+                    gcode.extend(self._gcode_from_points(self.points[layer][point], layer, point))
+        gcode.append(f'\n{amble}\nM30')
+        with open(gcode_file, 'w') as f:
+            _ = f.write('\n'.join(gcode))
+
+    def _gcode_from_points(self, points, layer, point):
+        print(layer, point, points)
+        code = []
+        # make a segment list in cut order
+        raw = [p for p in points]
+        s1 = raw[:2] # first two are rapid and lead-in
+        s2 = raw[self.sequences[layer]['start'][point]:-1] # from cut start to second last point
+        s3 = raw[2:self.sequences[layer]['start'][point]] # from beginning to cut start
+        s4 = [raw[-1]] # last point
+        segments = s1 + s2 + s3 + s4
+        # iterate through the segments
+        for s in segments:
+            if 'start' not in points[s]:
+                continue
+            # circles
+            if 'cp' in points[s]:
+                i = points[s]['cp'][0] - points[s]['start'][0]
+                j = points[s]['cp'][1] - points[s]['start'][1]
+                code.append(f'G0{points[s]['g']}' +
+                            f' X{points[s]['end'][0]:.{self.precision}f}' +
+                            f' Y{points[s]['end'][1]:.{self.precision}f}' +
+                            f' I{i:.{self.precision}f}' +
+                            f' J{j:.{self.precision}f}')
+            # lines
+            else:
+                cmd = 'G00' if s == 0 else 'G01'
+                code.append(f'{cmd}' +
+                            f' X{points[s]['end'][0]:.{self.precision}f}' +
+                            f' Y{points[s]['end'][1]:.{self.precision}f}')
+            if s == 0:
+                code.append('M03')
+        code.append('M05')
+        return code
