@@ -24,7 +24,6 @@ from ezdxf.path import make_path
 from PIL import Image
 from shapely.geometry import Polygon
 
-
 VERSION = '0.1.0'
 
 def get_asset_path(relative_path: str) -> str:

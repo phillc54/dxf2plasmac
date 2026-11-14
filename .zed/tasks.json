@@ -1,8 +1,7 @@
 [
   {
     "label": "Start Python Script",
-    "command": "pixi",
-    "args": ["run", "start"],
+    "command": "pixi run python3 -m src.${ZED_STEM}",
     "save" : "current"
   }
 ]
