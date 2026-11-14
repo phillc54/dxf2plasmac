@@ -156,7 +156,7 @@ class App(CTk.CTk):
         self.doc = self.open_doc(self.dxf_file)
         if not self.layers:
             self.layers = [l.dxf.name for l in self.doc.layers if l.dxf.name != 'Defpoints']
-            self.set_layers()
+            self.create_layer_widgets()
         for layer in self.layers:
             self.paths[layer] = self.dxf_to_paths(self.doc, layer)
             self.sequences[layer] = {'cut': [], 'start': {}, 'external': {}, 'lead-in': {}}
@@ -342,14 +342,14 @@ class App(CTk.CTk):
             paths[start + n + 1] = {'cp': circle.dxf.center, 'r': circle.dxf.radius}
         return paths
 
-    def set_layers(self):
+    def create_layer_widgets(self):
         for widget in self.layer_frame.winfo_children():
             widget.destroy()
         for layer in self.layers:
             check = CTk.CTkCheckBox(self.layer_frame, text=layer)
             if layer not in self.ignored:
                 check.select()
-            check.configure(command=lambda c=check, l=layer: self.toggle_layer(l, c))
+            check.configure(command=lambda c=check, l=f'layer_{layer}': self.toggle_layer(l, c))
             check.pack(padx=4, pady=(0, 4), expand=True, fill='x', anchor='w')
 
     def set_external_paths(self):
@@ -643,8 +643,8 @@ class App(CTk.CTk):
                             self.cut_color_external if self.sequences[layer]['external'][point] else
                             self.invalid_color if not self.sequences[layer]['lead-in'][point]['valid'] else
                             self.cut_color_internal)
-                    tg = 'rapid' if segment == 0 else 'lead-in' if segment == 1 else 'feed'
-                    tags = (mode, str(seq), str(line['seg']), fill, tg, layer)
+                    seg_type = 'rapid' if segment == 0 else 'lead-in' if segment == 1 else 'feed'
+                    tags = (mode, str(seq), str(line['seg']), fill, seg_type, f'layer_{layer}')
                     # get x and y, invert y
                     x1 = line['start'][0]
                     y1 = line['start'][1] * -1
@@ -726,12 +726,12 @@ class App(CTk.CTk):
     def show_option_popup(self, event):
         ''' display the context menu at the mouse cursor position '''
         if self.selected_item:
-            tags = self.canvas.itemcget(self.selected_item, 'tags')
-            seq = int(tags.split()[1])
-            layer = tags.split()[5]
-            cut = self.sequences[layer]['cut'][int(tags.split()[1])]
+            tags = tuple(self.canvas.itemcget(self.selected_item, 'tags').split(' '))
+            seq = int(tags[1])
+            layer = tags[5].split('_')[1]
+            cut = self.sequences[layer]['cut'][seq]
             path = self.paths[layer][self.sequences[layer]['cut'][seq]]
-            segment = int(tags.split()[2])
+            segment = int(tags[2])
             external_cut = self.sequences[layer]['external'][self.sequences[layer]['cut'][seq]]
             radius = path.get('r', None) if isinstance(path, dict) else None
             opts = ['', '']
@@ -750,8 +750,7 @@ class App(CTk.CTk):
                 color = self.leadin_color
             else:
                 # add 1 so user doesn't see cut sequence #0
-                # title = f'Cut: #{seq + 1}   Segment: #{segment + 1}'
-                title = f'Cut: #{seq + 1}   Segment: #{segment}'
+                title = f'Layer: {layer}\nCut: #{seq + 1}\nSegment: #{segment}'
                 opt1 = 'External \u2192 Internal' if self.sequences[layer]['external'][cut] else 'Internal \u2192 External'
                 if isinstance(path, dict): # circles
                     opts = [opt1, 'Change Cut Sequence', 'Change Start Angle']
@@ -1024,9 +1023,9 @@ class App(CTk.CTk):
         self.color_selected(self.canvas.type(self.selected_item), True)
         self.show_option_popup(event)
 
-    def color_selected(self, itemType, selected):
+    def color_selected(self, itemType, is_selected):
         if self.selected_item:
-            color = self.selected_color if selected else self.canvas.itemcget(self.selected_item, 'tags').split()[3]
+            color = self.selected_color if is_selected else self.canvas.itemcget(self.selected_item, 'tags').split()[3]
             if itemType == 'line':
                 self.canvas.itemconfig(self.selected_item, fill=color)
             elif itemType == 'arc':
@@ -1054,7 +1053,7 @@ class App(CTk.CTk):
             self.new_file = True
             self.selected_item = ''
             self.last_cut = (0.0, 0.0)
-            self.set_layers()
+            self.create_layer_widgets()
             self.do_plot()
 
     def save_project(self, _event):
@@ -1114,18 +1113,19 @@ class App(CTk.CTk):
         self.materials_frame.lift()
 
     def show_about(self, _event):
-        title = 'About dxf2plasmac'
+        title = ("\u00A0" * 50) + 'About dxf2plasmac'
         message = (f'Version {VERSION}'
-                   '\n'
-                   '\nA basic converter from dxf to QtPlasmaC G-code'
-                   '\n'
-                   '\nPortions of this software utilize the following:'
-                   '\nLucide Icons <https://lucide.dev>'
-                   '\nezdxf library. <https://github.com/mozman/ezdxf>'
-                   '\nshapely library <https://github.com/shapely/shapely>'
-                   '\npillow library <https://github.com/python-pillow/Pillow>'
-                   '\n'
-                   '\nLicensing for these is can be found in ATTRIBUTIONS.md'
+                   '\n\nA basic converter from dxf to QtPlasmaC G-code'
+                   '\n\nPortions of this software utilize the following:'
+                   '\n\nLucide Icons'
+                   '\n<https://lucide.dev>'
+                   '\n\nezdxf library'
+                   '\n<https://github.com/mozman/ezdxf>'
+                   '\n\nshapely library'
+                   '\n<https://github.com/shapely/shapely>'
+                   '\n\npillow library'
+                   '\n<https://github.com/python-pillow/Pillow>'
+                   '\n\nLicensing notes for these are in ATTRIBUTIONS.md'
                   )
         Msg.showinfo(self, title, message)
 
@@ -1238,10 +1238,10 @@ class App(CTk.CTk):
         kerf.grid(row=0, column=0, columnspan=2, padx=(4, 2), pady=(4, 2), sticky='new')
         self.layer_frame = CTk.CTkFrame(side, width=100, fg_color='transparent')
         self.layer_frame.grid(row=1, column=0, columnspan=2, sticky='new')
-        check = CTk.CTkCheckBox(side, text='Rapids')
-        check.select()
-        check.configure(command=self.toggle_rapids)
-        check.grid(row=3, column=0, columnspan=2, padx=(4, 2), pady=(4, 2), sticky='new')
+        rapids = CTk.CTkCheckBox(side, text='Rapids')
+        rapids.select()
+        rapids.configure(command=self.toggle_rapids)
+        rapids.grid(row=3, column=0, columnspan=2, padx=(4, 2), pady=(4, 2), sticky='new')
         ew = 48 # entry width
         row = 5
         kerf = CTk.CTkLabel(side, text='Kerf Width:', anchor='e')
@@ -1424,17 +1424,14 @@ class App(CTk.CTk):
     def close_materials(self):
         self.materials_frame.lower()
 
-#FIXME - layer 0 doesn't seem to work in itemonfig
     def toggle_layer(self, layer, widget):
         if widget.get():
             self.ignored.remove(layer)
-            # state = 'normal'
+            state = 'normal'
         else:
             self.ignored.append(layer)
-            # state = 'hidden'
-        self.do_plot()
-        # self.zoom_all()
-        # self.canvas.itemconfig(layer, state=state)
+            state = 'hidden'
+        self.canvas.itemconfig(layer, state=state)
 
     def toggle_rapids(self):
         state = 'hidden' if self.show_rapids else 'normal'

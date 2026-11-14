@@ -1,5 +1,5 @@
 [workspace]
-authors = ["phillc54 <phillc54@icloud.com>"]
+authors = ["phillc54 <353205594+phillc54@users.noreply.github.com>"]
 channels = ["conda-forge"]
 name = "dxf2plasmac"
 platforms = ["osx-arm64", "linux-64", "linux-aarch64", "win-64", "win-arm64"]
