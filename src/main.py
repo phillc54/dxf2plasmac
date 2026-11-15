@@ -319,7 +319,6 @@ class App(CTk.CTk):
                     # self.sequences[layer]['start'][cut] = 2
                     self.selected_item = ''
                     self.last_cut = (0.0, 0.0)
-                    # self.cut_points = self.get_points('cut')
                     self.cut_points = self.get_points('cut')
                     self.do_plot()
                 case 'Change Cut Sequence':
@@ -800,6 +799,7 @@ class App(CTk.CTk):
         kerf = CTk.CTkLabel(side, text='Kerf Width:', anchor='e')
         kerf.grid(row=row, column=0, padx=(4, 2), pady=(4, 2), sticky='nsew')
         kerf_entry = CTk.CTkEntry(side, textvariable=self.kerf_var, width=ew, border_width=1)
+        kerf_entry.bind('<Return>', lambda e:self.kerf_changed(kerf_entry.get()))
         kerf_entry.grid(row=row, column=1, padx=(2, 4), pady=(4, 2), sticky='nsew')
         row += 1
         feed = CTk.CTkLabel(side, text='Cut Speed:', anchor='e')
@@ -1051,6 +1051,16 @@ class App(CTk.CTk):
         self.pierce_h_var.set(self.material_dict[num]['PIERCE_HEIGHT'])
         self.pierce_d_var.set(self.material_dict[num]['PIERCE_DELAY'])
         self.cut_h_var.set(self.material_dict[num]['CUT_HEIGHT'])
+        self.cut_points = self.get_points('cut')
+        self.do_plot()
+
+    def kerf_changed(self, value):
+        try:
+            _ = float(value)
+            self.cut_points = self.get_points('cut')
+            self.do_plot()
+        except ValueError:
+            pass
 
     def get_preferences(self):
         ''' applies preference page widget values to the preference variables '''
