@@ -7,7 +7,6 @@ import math
 import os
 import pickle
 import sys
-from datetime import datetime
 from pathlib import Path
 from tkinter import Canvas
 from tkinter import simpledialog as Sd
@@ -17,12 +16,9 @@ from tkinter.filedialog import asksaveasfilename as Save
 import ctkmessagebox2 as Msg
 import customtkinter as CTk
 from CTkColorPicker import AskColor as Color
-from ezdxf import DXFStructureError, bbox, edgeminer, edgesmith, readfile, transform
-from ezdxf.math import Vec2, is_point_in_polygon_2d
-from ezdxf.path import Path as Shape
-from ezdxf.path import make_path
 from PIL import Image
-from shapely.geometry import Polygon
+
+from .dxf_to_plasmac import ToGcode, ToPaths, ToPoints
 
 VERSION = '0.1.0'
 
@@ -140,6 +136,8 @@ class App(CTk.CTk):
         self.ignored = []
         self.layers = []
         self.doc = ''
+        self.error = ''
+        self.converter = None
 
         self.create_main_page()
         self.create_prefs_frame()
@@ -148,43 +146,6 @@ class App(CTk.CTk):
         self.create_side_bar()
         # all widgets instantiated so apply preferences
         self.set_preferences()
-
-        # self.focus_force()
-
-    def do_paths(self):
-        self.sequences = {}
-        self.doc = self.open_doc(self.dxf_file)
-        if not self.layers:
-            self.layers = [l.dxf.name for l in self.doc.layers if l.dxf.name != 'Defpoints']
-            self.create_layer_widgets()
-        for layer in self.layers:
-            self.paths[layer] = self.dxf_to_paths(self.doc, layer)
-            self.sequences[layer] = {'cut': [], 'start': {}, 'external': {}, 'lead-in': {}}
-        for layer in self.layers:
-            for n in self.paths[layer]:
-                self.sequences[layer]['cut'].append(n)
-                # circles start at 0 degrees
-                if 'cp' in self.paths[layer][n]:
-                    self.sequences[layer]['start'][n] = 0
-                # lines start at segment 0 unless customized
-                else:
-                    self.sequences[layer]['start'][n] = 0
-                self.sequences[layer]['external'][n] = False
-                self.sequences[layer]['lead-in'][n] = {'type': self.lead_type, 'length': self.lead_length, 'angle': self.lead_angle, 'valid': True}
-
-    def do_shapes(self):
-        self.last_cut = (0.0, 0.0)
-        for layer in self.layers:
-            self.shape_points[layer] = {}
-            for n in self.sequences[layer]['cut']:
-                self.shape_points[layer][n] = self.path_to_points(self.paths[layer][n], layer, n)
-
-    def do_offsets(self):
-        self.last_cut = (0.0, 0.0)
-        for layer in self.layers:
-            self.cut_points[layer] = {}
-            for n in self.sequences[layer]['cut']:
-                self.cut_points[layer][n] = self.path_to_points(self.paths[layer][n], layer, n, True)
 
     def do_plot(self):
         self.plot(self.shape_points, clear=True)
@@ -199,413 +160,6 @@ class App(CTk.CTk):
             else:
                 self.canvas.scale('all', 0, 0, self.canvas_last['scale'], self.canvas_last['scale'])
                 self.canvas.move('all', self.canvas_last['x'], self.canvas_last['y'])
-
-    def do_gcode(self):
-        nu = self.material_var.get().split(':')[0].strip() if self.material_var.get() else 0
-        na = self.material_var.get().split(':')[1].strip() if self.material_var.get() else 'default'
-        ph = self.pierce_h_var.get()
-        pd = self.pierce_d_var.get()
-        ch = self.cut_h_var.get()
-        fr = self.feed_r_var.get()
-        kw = self.kerf_var.get()
-        units = 'G21 ; units in millimeters' if self.units == 'metric' else 'G201 ; units in inches'
-        blend = 0.1 if self.units == 'metric' else 0.004
-        amble = (f'{units}\n'
-                 'G40 ; cancel cutter compensation\n'
-                 'G49 ; cancel tool compensation\n'
-                 f'G64 P{blend} ; path blending tolerance\n'
-                 'G80 ; cancel canned cycle\n'
-                 'G90 ; absolute positioning\n'
-                 'G92.1 ; cancel G92 offsets\n'
-                 'G94 ; feed rate = units per minute\n'
-                 'G97 ; spindle mode = rpm')
-        gcode = [f'; {Path(self.gcode_file).name} from {Path(self.dxf_file).name} by dxf2PlasmaC',
-                 f'; {str(datetime.now()).rsplit(':', 1)[0]}',
-                 '',
-                 '; configure a temporary material',
-                 f'(o=0, nu={nu}, na={na}, ph={ph}, pd={pd}, ch={ch}, fr={fr}, kw={kw})',
-                 '',
-                 '#<h_velocity> = 60 ; small hole velocity = 60%',
-                 f'#<h_diameter> = {self.small_hole} ; small hole diameter',
-                 '#<holes> = 1 ; reduce velocity  for small holes',
-                 '',
-                 f'{amble}',
-                 '',
-                 'F#<_hal[plasmac.cut-feed-rate]> ; set feed rate']
-        for layer in self.layers:
-            if layer not in self.ignored:
-                for n, point in enumerate(self.sequences[layer]['cut']):
-                    gcode.append(f'\n;start of layer {layer}, cut #{n + 1}')
-                    gcode.extend(self.gcode_from_points(self.cut_points[layer][point], layer, point))
-        gcode.append(f'\n{amble}\nM30')
-        return gcode
-
-    def open_doc(self, dxf_filename):
-        title='File Error'
-        try:
-            doc = readfile(dxf_filename)
-        except OSError:
-            message='Not a DXF file or a generic I/O error.'
-            Msg.showerror(self, title, message)
-            sys.exit(1)
-        except DXFStructureError:
-            message='Invalid or corrupted DXF file.'
-            Msg.showerror(self, title, message)
-            sys.exit(2)
-        except Exception as e:
-            message = f'\n{e}\nWhile attempting to open dxf_filename\n'
-            Msg.showerror(self, title, message)
-            sys.exit(2)
-        return doc
-
-    def dxf_to_paths(self, doc, layer):
-        ''' get entities
-            get edges
-            create counter clockwise paths '''
-        paths = {}
-        # try to determine dxf units
-        scale = 1
-        # $MEASUREMENT (0 = imperial, 1 = metric)
-        mu = doc.header.get('$MEASUREMENT', None)
-        # $INSUNITS (specific units like mm, inches etc.)
-        iu = doc.header.get('$INSUNITS', None)
-        # probable a metric dxf
-        if mu == 1 or iu in [4, 5, 6, 7, 12, 13, 14, 15, 16]:
-            scale = 1 if self.units == 'metric' else 1 / 25.4
-        # probably an imperial dxf
-        elif mu == 0 or iu in [1, 2, 3, 8, 9, 10]:
-            scale = 25.4 if self.units == 'metric' else 1
-        # try an in place scale if required
-        if scale != 1:
-            #  scale x, y, and z axes equally
-            matrix = transform.Matrix44.scale(scale)
-            # resize all geometry coordinates
-            transform.inplace(doc.modelspace(), matrix)
-        # get bounding box
-        msp = doc.modelspace()
-        bb = bbox.extents(msp)
-        if bb.has_data:
-            self.size = (round(bb.size.x, 2), round(bb.size.y, 2))
-            post = 'mm' if self.units == 'metric' else 'in'
-            self.title(f'{self.title()}     Size: {self.size[0]}{post} x {self.size[1]}{post}')
-        # move bounding box to origin
-        matrix = transform.Matrix44.translate(bb.extmin[0] / -2, bb.extmin[1] / -2, 0)
-        # resize all geometry coordinates
-        transform.inplace(doc.modelspace(), matrix)
-        for block in doc.blocks:
-            if not block.is_any_paperspace:
-                transform.inplace(block, matrix)
-        # get drawing enities
-        msp = doc.modelspace()
-        # process lines, splines, polylines, and arcs
-        lines = msp.query('LINE').filter(lambda e: e.dxf.layer == layer)
-        splines = msp.query('SPLINE').filter(lambda e: e.dxf.layer == layer)
-        polylines=msp.query('LWPOLYLINE POLYLINE').filter(lambda e: e.dxf.layer == layer)
-        arcs = msp.query('ARC').filter(lambda e: e.dxf.layer == layer)
-        #create edge list
-        edges = []
-        # create edges from lines
-        edges.extend(list(edgesmith.edges_from_entities_2d(lines, gap_tol=self.gap_tolerance)))
-        # add edges from splines
-        edges.extend(list(edgesmith.edges_from_entities_2d(splines, gap_tol=self.gap_tolerance)))
-        # add edges from polylines
-        for polyline in polylines:
-            edges.extend(list(edgesmith.edges_from_entities_2d(polyline.explode(), gap_tol=self.gap_tolerance)))
-        # add edges from arcs
-        for entity in arcs:
-            edge = edgesmith.make_edge_2d(entity)
-            if edge is not None:
-                edges.append(edge)
-        # get all edge chains
-        if edges:
-            deposit = edgeminer.Deposit(edges, gap_tol=self.gap_tolerance)
-            chains = edgeminer.find_all_simple_chains(deposit)
-            # make a path from each chain
-            for n, chain in enumerate(chains):
-                # path = Path()
-                path = Shape()
-                for edge in chain:
-                    entity = edge.payload
-                    if entity:
-                        entity_path = make_path(entity)
-                        if edge.is_reverse:
-                            entity_path = entity_path.reversed()
-                        if len(path) == 0:
-                            path = entity_path
-                        else:
-                            path.append_path(entity_path)
-                paths[n] = path
-        # process circles
-        circles = msp.query('CIRCLE').filter(lambda e: e.dxf.layer == layer)
-        start = len(paths) - 1
-        for n, circle in enumerate(circles):
-            paths[start + n + 1] = {'cp': circle.dxf.center, 'r': circle.dxf.radius}
-        return paths
-
-    def create_layer_widgets(self):
-        for widget in self.layer_frame.winfo_children():
-            widget.destroy()
-        for layer in self.layers:
-            check = CTk.CTkCheckBox(self.layer_frame, text=layer)
-            if layer not in self.ignored:
-                check.select()
-            check.configure(command=lambda c=check, l=f'layer_{layer}': self.toggle_layer(l, c))
-            check.pack(padx=4, pady=(0, 4), expand=True, fill='x', anchor='w')
-
-    def set_external_paths(self):
-        for layer in self.layers:
-            polygons = {}
-            for key, path in self.paths[layer].items():
-                if isinstance(path, dict): # rough diamond to imitate circles
-                    vertices = [Vec2(path['cp'][0]-path['r'], path['cp'][1])]
-                    vertices.append(Vec2(path['cp'][0], path['cp'][1]+path['r']))
-                    vertices.append(Vec2(path['cp'][0]+path['r'], path['cp'][1]))
-                    vertices.append(Vec2(path['cp'][0], path['cp'][1]-path['r']))
-                else:
-                    vertices = list(path.flattening(distance=self.flattening_distance))
-                polygons[key] = [Vec2(v) for v in vertices]
-            external_cuts = []
-            # check each path to see if it is nested inside any other path
-            for key, poly in polygons.items():
-                # if a path has no vertices
-                if not poly:
-                    continue
-                # get the first vertex to test for containment
-                test_point = poly[0]
-                is_nested = False
-                for other_key, other_poly in polygons.items():
-                    if key == other_key:
-                        continue
-                    # test if nested
-                    if is_point_in_polygon_2d(test_point, other_poly) == 1:
-                        is_nested = True
-                        break  # it is a inner path, skip to the next one
-                # if not nested then it is an outer shape
-                if not is_nested:
-                    external_cuts.append(key)
-            # set external cuts and do them last
-            for cut in external_cuts:
-                self.sequences[layer]['cut'].remove(cut)
-                self.sequences[layer]['cut'].append(cut)
-                self.sequences[layer]['external'][cut] = True
-
-    def path_to_points(self, path, layer, path_num, cut=False):
-        external_cut = self.sequences[layer]['external'][path_num]
-        offset = float(self.kerf_var.get()) / 2 if external_cut else float(self.kerf_var.get()) / -2
-        l_length = self.sequences[layer]['lead-in'][path_num]['length']
-        l_angle = self.sequences[layer]['lead-in'][path_num]['angle']
-        arc_lead = self.sequences[layer]['lead-in'][path_num]['type'] == 'arc'
-        points_dict = {}
-        # circles
-        if isinstance(path, dict):
-            # circle center point
-            xc = round(path['cp'][0], self.precision)
-            yc = round(path['cp'][1], self.precision)
-            # cut path
-            if cut:
-                 # base angle for lead-ins
-                ang = self.sequences[layer]['start'][path_num]
-                # set radius to cut path rather than shape
-                r = round(path['r'], self.precision) + offset
-                # lead-in cannot be greater than radius
-                ll = min(l_length, r)
-                # external is clockwise
-                g = 2 if external_cut else 3
-                lg = 3
-                # circle start point
-                xs = xc + r * math.cos(math.radians(ang))
-                ys = yc + r * math.sin(math.radians(ang))
-                # small internal hole
-                if r < self.small_hole / 2 and not external_cut:
-                    # leadin start
-                    xl = xs - ll * math.cos(math.radians(ang))
-                    yl = ys - ll * math.sin(math.radians(ang))
-                    # write points
-                    points_dict[0] = {'seg': 0, 'start': self.last_cut, 'end': (xl, yl)}
-                    points_dict[1] = {'seg': 1, 'start': (xl, yl), 'end': (xs, ys)}
-                    points_dict[2] = {'seg': 2, 'start': (xs, ys), 'end': (xs, ys), 'cp': (xc, yc), 'r': r, 'g': g}
-                    self.sequences[layer]['lead-in'][path_num]['type'] = 'line'
-                else:
-                    # get radius for correct lead-in length
-                    lr = 2 * ll / math.pi
-                    # angle from circle center to arc lead-in center
-                    lead_center_angle = ang if external_cut else 180 + ang
-                    # angle from arc lead-in center to arc lead-in start
-                    lead_start_angle = 90 + ang if external_cut else 270 + ang
-                    # lead-in center point
-                    lead_cp_x = xs + lr * math.cos(math.radians(lead_center_angle))
-                    lead_cp_y = ys + lr  * math.sin(math.radians(lead_center_angle))
-                    if arc_lead:
-                        # leadin start point
-                        lead_start_x = lead_cp_x + lr * math.cos(math.radians(lead_start_angle))
-                        lead_start_y = lead_cp_y + lr  * math.sin(math.radians(lead_start_angle))
-                    else:
-                        # angle from circle start to line lead-in start
-                        a = 90 + ang - l_angle if external_cut else 270 + ang - l_angle
-                        # lead-in start point
-                        lead_start_x = xs + l_length * math.cos(math.radians(a))
-                        lead_start_y = ys + l_length * math.sin(math.radians(a))
-                    # write points
-                    points_dict[0] = {'seg': 0, 'start': self.last_cut, 'end': (lead_start_x, lead_start_y)}
-                    points_dict[1] = {'seg': 1, 'start': (lead_start_x, lead_start_y), 'end': (xs, ys)}
-                    if arc_lead:
-                        arc_data = {'cp': (lead_cp_x, lead_cp_y), 'r': lr, 'sa': lead_start_angle, 'e': 90, 'g': lg}
-                        points_dict[1].update(arc_data)
-                    points_dict[2] = {'seg': 2, 'start': (xs, ys), 'end': (xs, ys), 'cp': (xc, yc), 'r': r, 'g': g}
-            # shape path
-            else:
-                r = path['r']
-                # write points
-                points_dict[0] = {'seg': 0}
-                points_dict[1] = {'seg': 1}
-                points_dict[2] = {'seg': 2, 'start': (xc + r, yc), 'end': (xc + r, yc), 'cp': (xc, yc), 'r': r}
-        # lines
-        else:
-            # these are to keep pyright quiet
-            lxc, lyc, lsa, lr = 0.0, 0.0, 0.0, 0.0
-            # create list of vertexes
-            vertices = list(path.flattening(distance=self.flattening_distance))
-            # offset every vertex and set cut direction if this is a closed cut
-            if cut and path.is_closed:
-                poly = Polygon(vertices).buffer(0)
-                offset_poly = poly.buffer(offset, join_style=1)# 1 = round, 2 = miter, 3 = bevel
-                if offset_poly.is_empty:
-                    title='Shape Warning'
-                    message=f'Shape {path_num} is too constricted to offset'
-                    Msg.showwarning(self, title, message)
-                    return None
-                if offset_poly.geom_type == 'Polygon':
-                    vertices = list(offset_poly.exterior.coords)
-                elif offset_poly.geom_type == 'MultiPolygon':
-                    for p in offset_poly.geoms:
-                        vertices = list(p.exterior.coords)
-            # set counter clockwise and internal as the default
-            if not external_cut:
-                vertices.reverse()
-            # create list of segments, empty points at 0 and 1 to account for rapid and lead-in
-            segments = [[], []]
-            for n, v in enumerate(vertices):
-                if n < len(vertices) - 1:
-                    segments.append([v, vertices[n + 1]])
-            seg_list = list(range(len(segments)))
-            s_list = []
-            if cut:
-                idx = self.sequences[layer]['start'][path_num]
-                self.sequences[layer]['lead-in'][path_num]['valid'] = True
-                if idx==0:
-                    default = True # use default start segment
-                    idx=2
-                else:
-                    default = False # use custom start segment
-                s1 = seg_list[:2] # first two are rapid and lead-in
-                s2 = seg_list[idx:] # from index to end
-                s3 = seg_list[2:idx] # from beginning to index
-                s_list = s1 + s2 + s3
-                if path.is_closed:
-                    # these are to keep pyright quiet
-                    xs, ys, xm, ym, lxs, lys = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
-                    # radius for arc leadin
-                    lr = 2 * l_length / math.pi
-                    # offset for line leadin
-                    ll = l_length * math.sin(math.radians(self.lead_angle))
-                    # base offset distance
-                    offset = lr if arc_lead else ll
-                    # loop until leadin fits
-                    while 1:
-                        # segment start point
-                        xs = segments[idx][0][0]
-                        ys = segments[idx][0][1]
-                        # segment end point
-                        xe = segments[idx][1][0]
-                        ye = segments[idx][1][1]
-                        # segment mid point
-                        xm = (xs + xe) / 2
-                        ym = (ys + ye) / 2
-                        # segment angle
-                        ang = math.atan2(ye - ys, xe - xs)
-                        # get lead-in points
-                        if arc_lead:
-                            # lead-in center
-                            lxc = xm + lr * math.cos(ang+math.radians(90))
-                            lyc = ym + lr * math.sin(ang+math.radians(90))
-                            # lead-in start
-                            lxs = lxc - lr * math.cos(ang)
-                            lys = lyc - lr * math.sin(ang)
-                            # lead-in start angle
-                            lsa = math.degrees(math.atan2(lys-lyc, lxs-lxc))
-                        else:
-                            # lead-in start
-                            lxs = xm + l_length * math.cos(ang+math.radians(180 - l_angle))
-                            lys = ym + l_length * math.sin(ang+math.radians(180 - l_angle))
-                        # attempt to ensure the lead-in start is:
-                        #   inside the cut for an internal cut
-                        #   outside the cut for an external cut
-                        if default:
-                            poly = Polygon(vertices)
-                            o = offset * 0.95 if external_cut else offset * -0.95
-                            leadin_poly = poly.buffer(o, join_style=2)
-                            side = -1 if external_cut else 1
-                            valid = False
-                            # some small shapes may be split
-                            if leadin_poly.geom_type == 'MultiPolygon':
-                                polys = [geom for geom in leadin_poly.geoms]
-                            else:
-                                polys = [leadin_poly]
-                            for poly in polys:
-                                # check leadin start distance from cut
-                                leadins_poly = [Vec2(x, y) for x, y in poly.exterior.coords]
-                                if is_point_in_polygon_2d(Vec2(lxs, lys), leadins_poly) == side:
-                                    self.sequences[layer]['start'][path_num] = idx
-                                    valid = True
-                                    break
-                            # valid lead-in so complete the cut
-                            if valid:
-                                break
-                            idx += 1
-                            # this run didn't work
-                            if idx == len(segments):
-                                # less than kerf away so fail
-                                if offset - float(self.kerf_var.get()) < self.epsilon:
-                                    title='Lead-in Warning'
-                                    message=f'Could not find valid lead-in for cut {path_num}'
-                                    Msg.showwarning(self, title, message)
-                                    self.sequences[layer]['lead-in'][path_num]['valid'] = False
-                                    idx = 2
-                                    self.sequences[layer]['start'][path_num] = idx
-                                    break
-                                # decrease the test distance and go again
-                                else:
-                                    offset -= float(self.kerf_var.get())
-                                    offset = max(offset, float(self.kerf_var.get()))
-                                    idx = 2
-                        else:
-                            break
-                    segments[0] = [self.last_cut, (lxs, lys)]
-                    segments[1] = [(lxs, lys), (xm, ym)]
-                    segments[idx][0] = (xm, ym)
-                    segments.append([(xs, ys), (xm, ym)])
-                    s_list.append(len(s_list))
-                else:
-                    segments[0] = [self.last_cut, (segments[2][0][0], segments[2][0][1])]
-            # add line points to the points dict
-            lst = s_list if cut else seg_list
-            for n, s in enumerate(lst):
-                if segments[s]:
-                    points_dict[n] = {'seg': s,
-                                      'start': (round(segments[s][0][0], self.precision), round(segments[s][0][1], self.precision)),
-                                      'end': (round(segments[s][1][0], self.precision), round(segments[s][1][1], self.precision))}
-                    if cut and s == 1 and arc_lead:
-                        points_dict[n]['cp'] = (round(lxc, self.precision), round(lyc, self.precision))
-                        points_dict[n]['r'] = round(lr, self.precision)
-                        points_dict[n]['sa'] = round(lsa, self.precision)
-                        points_dict[n]['e'] = 90.0
-                        points_dict[n]['g'] = 3
-                else:
-                    points_dict[n] = {'seg': s}
-        last_cut = points_dict[len(points_dict)-1]['end']
-        self.last_cut = (round(last_cut[0], self.precision),
-                         round(last_cut[1], self.precision))
-        return points_dict
 
     def plot(self, points, mode:str='shape', clear:bool=False):
         ''' plot a job '''
@@ -677,39 +231,6 @@ class App(CTk.CTk):
         if not self.show_rapids:
             self.canvas.itemconfig('rapid', state='hidden')
 
-    def gcode_from_points(self, points, layer, point):
-        code = []
-        # make a segment list in cut order
-        raw = [p for p in points]
-        s1 = raw[:2] # first two are rapid and lead-in
-        s2 = raw[self.sequences[layer]['start'][point]:-1] # from cut start to second last point
-        s3 = raw[2:self.sequences[layer]['start'][point]] # from beginning to cut start
-        s4 = [raw[-1]] # last point
-        segments = s1 + s2 + s3 + s4
-        # iterate through the segments
-        for s in segments:
-            if 'start' not in points[s]:
-                continue
-            # circles
-            if 'cp' in points[s]:
-                i = points[s]['cp'][0] - points[s]['start'][0]
-                j = points[s]['cp'][1] - points[s]['start'][1]
-                code.append(f'G0{points[s]['g']}' +
-                            f' X{points[s]['end'][0]:.{self.precision}f}' +
-                            f' Y{points[s]['end'][1]:.{self.precision}f}' +
-                            f' I{i:.{self.precision}f}' +
-                            f' J{j:.{self.precision}f}')
-            # lines
-            else:
-                cmd = 'G00' if s == 0 else 'G01'
-                code.append(f'{cmd}' +
-                            f' X{points[s]['end'][0]:.{self.precision}f}' +
-                            f' Y{points[s]['end'][1]:.{self.precision}f}')
-            if s == 0:
-                code.append('M03')
-        code.append('M05')
-        return code
-
     def shutdown(self):
         with open(self.prefs_file, 'r') as f:
             r = f.readlines()
@@ -723,15 +244,25 @@ class App(CTk.CTk):
                     f.write(l)
         self.destroy()
 
+    def create_layer_widgets(self):
+        for widget in self.layer_frame.winfo_children():
+            widget.destroy()
+        for layer in self.layers:
+            check = CTk.CTkCheckBox(self.layer_frame, text=layer)
+            if layer not in self.ignored:
+                check.select()
+            check.configure(command=lambda c=check, l=f'layer_{layer}': self.toggle_layer(l, c))
+            check.pack(padx=4, pady=(0, 4), expand=True, fill='x', anchor='w')
+
     def show_option_popup(self, event):
         ''' display the context menu at the mouse cursor position '''
         if self.selected_item:
-            tags = tuple(self.canvas.itemcget(self.selected_item, 'tags').split(' '))
-            seq = int(tags[1])
-            layer = tags[5].split('_')[1]
-            cut = self.sequences[layer]['cut'][seq]
+            tags = self.canvas.itemcget(self.selected_item, 'tags')
+            seq = int(tags.split()[1])
+            layer = tags.split()[5].split('_')[1]
+            cut = self.sequences[layer]['cut'][int(tags.split()[1])]
             path = self.paths[layer][self.sequences[layer]['cut'][seq]]
-            segment = int(tags[2])
+            segment = int(tags.split()[2])
             external_cut = self.sequences[layer]['external'][self.sequences[layer]['cut'][seq]]
             radius = path.get('r', None) if isinstance(path, dict) else None
             opts = ['', '']
@@ -750,7 +281,8 @@ class App(CTk.CTk):
                 color = self.leadin_color
             else:
                 # add 1 so user doesn't see cut sequence #0
-                title = f'Layer: {layer}\nCut: #{seq + 1}\nSegment: #{segment}'
+                # title = f'Cut: #{seq + 1}   Segment: #{segment + 1}'
+                title = f'Cut: #{seq + 1}   Segment: #{segment}'
                 opt1 = 'External \u2192 Internal' if self.sequences[layer]['external'][cut] else 'Internal \u2192 External'
                 if isinstance(path, dict): # circles
                     opts = [opt1, 'Change Cut Sequence', 'Change Start Angle']
@@ -770,48 +302,49 @@ class App(CTk.CTk):
                         self.sequences[layer]['lead-in'][cut]['type'] = 'arc'
                     else:
                         self.sequences[layer]['lead-in'][cut]['type'] = 'line'
-                    self.do_offsets()
+                    self.cut_points = self.get_points('cut')
                     self.do_plot()
                 case 'Change Length':
                     self.color_selected(self.canvas.type(self.selected_item), False)
                     self.selected_item = ''
                     self.last_cut = (0.0, 0.0)
-                    self.after(100, self.lead_in_length, cut, radius, external_cut)
+                    self.after(100, self.lead_in_length, cut, radius, external_cut, layer)
                 case 'Change Angle':
                     self.color_selected(self.canvas.type(self.selected_item), False)
                     self.selected_item = ''
                     self.last_cut = (0.0, 0.0)
-                    self.after(100, self.lead_in_angle, cut)
+                    self.after(100, self.lead_in_angle, cut, layer)
                 case 'Internal \u2192 External' | 'External \u2192 Internal':
                     self.sequences[layer]['external'][cut] = not self.sequences[layer]['external'][cut]
                     # self.sequences[layer]['start'][cut] = 2
                     self.selected_item = ''
                     self.last_cut = (0.0, 0.0)
-                    self.do_offsets()
+                    # self.cut_points = self.get_points('cut')
+                    self.cut_points = self.get_points('cut')
                     self.do_plot()
                 case 'Change Cut Sequence':
                     self.color_selected(self.canvas.type(self.selected_item), False)
                     self.selected_item = ''
                     self.last_cut = (0.0, 0.0)
-                    self.after(100, self.change_sequence, cut, seq)
+                    self.after(100, self.change_sequence, cut, seq, layer)
                 case 'Set As Start Segment':
                     self.selected_item = ''
                     self.last_cut = (0.0, 0.0)
                     self.sequences[layer]['start'][cut] = segment
-                    self.do_offsets()
+                    self.cut_points = self.get_points('cut')
                     self.do_plot()
                 case 'Change Start Angle':
                     self.color_selected(self.canvas.type(self.selected_item), False)
                     self.selected_item = ''
                     self.last_cut = (0.0, 0.0)
-                    self.after(100, self.change_start_angle, cut, seq)
+                    self.after(100, self.change_start_angle, cut, seq, layer)
                 case _:
                     pass
             if self.selected_item:
                 self.color_selected(self.canvas.type(self.selected_item), False)
                 self.selected_item = ''
 
-    def change_sequence(self, cut, seq):
+    def change_sequence(self, cut, seq, layer):
         # add 1 here so user doesn't see cut sequence #0
         mini = min(self.sequences[layer]['cut']) + 1
         maxi = max(self.sequences[layer]['cut']) + 1
@@ -824,10 +357,10 @@ class App(CTk.CTk):
         if new_seq is not None and new_seq != seq + 1:
             self.sequences[layer]['cut'].remove(cut)
             self.sequences[layer]['cut'].insert(new_seq - 1, cut)
-            self.do_offsets()
+            self.cut_points = self.get_points('cut')
             self.do_plot()
 
-    def change_start_angle(self, cut, seq):
+    def change_start_angle(self, cut, seq, layer):
         mini = 0
         maxi = 359
         ang = Sd.askinteger('Cut Start Angle',
@@ -838,10 +371,10 @@ class App(CTk.CTk):
                              parent=self)
         if ang is not None and ang != seq + 1:
             self.sequences[layer]['start'][cut] = ang
-            self.do_offsets()
+            self.cut_points = self.get_points('cut')
             self.do_plot()
 
-    def lead_in_length(self, cut, radius, external_cut):
+    def lead_in_length(self, cut, radius, external_cut, layer):
         maxi = radius if radius and radius < self.small_hole and not external_cut else 10
         length = Sd.askfloat('Lead-in Length',
                              f'Enter a new lead-in length\nfom 0 to {maxi}',
@@ -851,10 +384,10 @@ class App(CTk.CTk):
                              parent=self)
         if length is not None:
             self.sequences[layer]['lead-in'][cut]['length'] = length
-            self.do_offsets()
+            self.cut_points = self.get_points('cut')
             self.do_plot()
 
-    def lead_in_angle(self, cut):
+    def lead_in_angle(self, cut, layer):
         angle = Sd.askinteger('Lead-in Angle',
                              'Enter lead-in angle:',
                              initialvalue=self.sequences[layer]['lead-in'][cut]['angle'],
@@ -863,7 +396,7 @@ class App(CTk.CTk):
                              parent=self)
         if angle is not None:
             self.sequences[layer]['lead-in'][cut]['angle'] = angle
-            self.do_offsets()
+            self.cut_points = self.get_points('cut')
             self.do_plot()
 
     def zoom_in(self, _event):
@@ -1023,9 +556,9 @@ class App(CTk.CTk):
         self.color_selected(self.canvas.type(self.selected_item), True)
         self.show_option_popup(event)
 
-    def color_selected(self, itemType, is_selected):
+    def color_selected(self, itemType, selected):
         if self.selected_item:
-            color = self.selected_color if is_selected else self.canvas.itemcget(self.selected_item, 'tags').split()[3]
+            color = self.selected_color if selected else self.canvas.itemcget(self.selected_item, 'tags').split()[3]
             if itemType == 'line':
                 self.canvas.itemconfig(self.selected_item, fill=color)
             elif itemType == 'arc':
@@ -1087,24 +620,45 @@ class App(CTk.CTk):
             self.loaded_file = str(Path(file).stem)
             self.new_file = True
             self.ignored = []
-            self.layers = []
-            self.do_paths()
-            self.set_external_paths()
-            self.do_shapes()
-            self.do_offsets()
+            self.converter = ToPaths(self.units, self.gap_tolerance, self.lead_type, self.lead_length, self.lead_angle)
+            self.doc, self.layers, self.paths, self.sequences, self.size, self.error = self.converter.get_paths(self.dxf_file)
+            if self.error:
+                title = 'File Open Error'
+                Msg.showerror(self, title, self.error)
+                return
+            self.create_layer_widgets()
+            post = 'mm' if self.units == 'metric' else 'in'
+            self.title(f'{self.title()}     Size: {self.size[0]}{post} x {self.size[1]}{post}')
+            self.shape_points = self.get_points('shape')
+            self.cut_points = self.get_points('cut')
             self.do_plot()
+
+    def get_points(self, mode):
+        sp = ToPoints(self.paths, self.layers, self.sequences, self.kerf_var.get(), self.precision, self.small_hole, self.last_cut, self.lead_angle, self.flattening_distance)
+        points, warnings = sp.get_points(mode)
+        if warnings:
+            title = 'Cut Warnings'
+            message = "\n".join(warnings)
+            Msg.showwarning(self, title, message)
+        return points
 
     def export_gcode(self, _event):
         file = Save(parent=self,
                     title='Save GCode File',
                     filetypes=[('GCode File', '*.ngc'), ('Any File', '*.*')],
                     initialdir=self.current_path,
-                    initialfile = self.loaded_file)#self.gcode_file)
+                    initialfile = self.loaded_file)
         if file:
-            self.gcode_file = file
-            gcode = self.do_gcode()
-            with open(self.gcode_file, 'w') as f:
-                _ = f.write('\n'.join(gcode))
+            material = {}
+            material['nu'] = self.material_var.get().split(':')[0].strip() if self.material_var.get() else 0
+            material['na'] = self.material_var.get().split(':')[1].strip() if self.material_var.get() else 'default'
+            material['ph'] = self.pierce_h_var.get()
+            material['pd'] = self.pierce_d_var.get()
+            material['ch'] = self.cut_h_var.get()
+            material['fr'] = self.feed_r_var.get()
+            material['kw'] = self.kerf_var.get()
+            gc = ToGcode(self.cut_points, self.layers, self.sequences, self.ignored, self.precision)
+            gc.write_gcode(file, self.small_hole, self.units, material)
 
     def show_preferences_frame(self, _event):
         self.prefs_frame.lift()
@@ -1113,19 +667,18 @@ class App(CTk.CTk):
         self.materials_frame.lift()
 
     def show_about(self, _event):
-        title = ("\u00A0" * 50) + 'About dxf2plasmac'
+        title = 'About dxf2plasmac'
         message = (f'Version {VERSION}'
-                   '\n\nA basic converter from dxf to QtPlasmaC G-code'
-                   '\n\nPortions of this software utilize the following:'
-                   '\n\nLucide Icons'
-                   '\n<https://lucide.dev>'
-                   '\n\nezdxf library'
-                   '\n<https://github.com/mozman/ezdxf>'
-                   '\n\nshapely library'
-                   '\n<https://github.com/shapely/shapely>'
-                   '\n\npillow library'
-                   '\n<https://github.com/python-pillow/Pillow>'
-                   '\n\nLicensing notes for these are in ATTRIBUTIONS.md'
+                   '\n'
+                   '\nA basic converter from dxf to QtPlasmaC G-code'
+                   '\n'
+                   '\nPortions of this software utilize the following:'
+                   '\nLucide Icons <https://lucide.dev>'
+                   '\nezdxf library. <https://github.com/mozman/ezdxf>'
+                   '\nshapely library <https://github.com/shapely/shapely>'
+                   '\npillow library <https://github.com/python-pillow/Pillow>'
+                   '\n'
+                   '\nLicensing for these is can be found in ATTRIBUTIONS.md'
                   )
         Msg.showinfo(self, title, message)
 
@@ -1150,7 +703,7 @@ class App(CTk.CTk):
         self.canvas.bind('<Button-4>', self.on_mousewheel)
         self.canvas.bind('<Button-5>', self.on_mousewheel)
         self.canvas.bind('<Configure>', self.canvas_resized)
-
+        # material selector
         mat = CTk.CTkFrame(self.main_frame)
         mat.grid(row=2, column=0, columnspan=2, sticky='w')
         mat.grid_columnconfigure(1, weight=1)
@@ -1238,10 +791,10 @@ class App(CTk.CTk):
         kerf.grid(row=0, column=0, columnspan=2, padx=(4, 2), pady=(4, 2), sticky='new')
         self.layer_frame = CTk.CTkFrame(side, width=100, fg_color='transparent')
         self.layer_frame.grid(row=1, column=0, columnspan=2, sticky='new')
-        rapids = CTk.CTkCheckBox(side, text='Rapids')
-        rapids.select()
-        rapids.configure(command=self.toggle_rapids)
-        rapids.grid(row=3, column=0, columnspan=2, padx=(4, 2), pady=(4, 2), sticky='new')
+        check = CTk.CTkCheckBox(side, text='Rapids')
+        check.select()
+        check.configure(command=self.toggle_rapids)
+        check.grid(row=3, column=0, columnspan=2, padx=(4, 2), pady=(4, 2), sticky='new')
         ew = 48 # entry width
         row = 5
         kerf = CTk.CTkLabel(side, text='Kerf Width:', anchor='e')
@@ -1402,14 +955,13 @@ class App(CTk.CTk):
     def save_prefs(self):
         self.get_preferences()
         self.save_preferences()
-        # self.prefs_frame.lower()
 
     def apply_prefs(self):
         self.get_preferences()
         self.canvas.config(bg=self.canvas_color)
         if self.loaded_file:
             self.last_cut = (0.0, 0.0)
-            self.do_offsets()
+            self.cut_points = self.get_points('cut')
             self.do_plot()
 
     def close_prefs(self):
@@ -1418,12 +970,13 @@ class App(CTk.CTk):
     def apply_materials(self):
         if self.loaded_file:
             self.last_cut = (0.0, 0.0)
-            self.do_offsets()
+            self.cut_points = self.get_points('cut')
             self.do_plot()
 
     def close_materials(self):
         self.materials_frame.lower()
 
+#FIXME - layer 0 doesn't seem to work in itemconfig
     def toggle_layer(self, layer, widget):
         if widget.get():
             self.ignored.remove(layer)
@@ -1431,6 +984,8 @@ class App(CTk.CTk):
         else:
             self.ignored.append(layer)
             state = 'hidden'
+        # self.do_plot()
+        # self.zoom_all()
         self.canvas.itemconfig(layer, state=state)
 
     def toggle_rapids(self):

@@ -1,6 +1,7 @@
 import math
 from datetime import datetime
 from pathlib import Path
+from typing import cast
 
 from ezdxf import bbox, edgeminer, edgesmith, transform
 from ezdxf.entities.lwpolyline import LWPolyline
@@ -13,6 +14,8 @@ from ezdxf.path import Path as ezPath
 from ezdxf.path import make_path
 from shapely import BufferJoinStyle
 from shapely.geometry import MultiPolygon, Polygon
+
+# from shapely.geometry.base import BaseGeometry
 
 epsilon = 1e-6
 join_style = BufferJoinStyle.round # round, mitre, or bevel
@@ -34,18 +37,9 @@ class ToPaths:
         self.size = (0.0, 0.0)
         self.error = None
 
-    def reset(self):
-        ''' clear previous file state before loading a new dxf '''
-        self.doc = None
-        self.layers = []
-        self.paths = {}
-        self.sequences = {}
-        self.size = (0.0, 0.0)
-        self.error = None
-
     def get_paths(self, dxf_file):
         ''' load a dxf file, convert entities to paths, and build cut sequences '''
-        self.reset()
+        self._reset()
         self._open_doc(dxf_file)
         if self.doc and not self.error:
             self.layers = [
@@ -74,6 +68,15 @@ class ToPaths:
                     }
             self._set_external_paths()
         return self.doc, self.layers, self.paths, self.sequences, self.size, self.error
+
+    def _reset(self):
+        ''' clear previous file state before loading a new dxf '''
+        self.doc = None
+        self.layers = []
+        self.paths = {}
+        self.sequences = {}
+        self.size = (0.0, 0.0)
+        self.error = None
 
     def _open_doc(self, dxf_file):
         ''' open a dxf file '''
@@ -204,7 +207,6 @@ class ToPaths:
                     external_cuts.append(key)
             # set external cuts and do them last
             for cut in external_cuts:
-                print(external_cuts, cut)
                 self.sequences[layer]['cut'].remove(cut)
                 self.sequences[layer]['cut'].append(cut)
                 self.sequences[layer]['external'][cut] = True
@@ -227,13 +229,11 @@ class ToPoints:
         points = {}
         last_cut = (0.0, 0.0)
         warnings = []
-        print(f'mode={mode}  layers={self.layers}')
         for layer in self.layers:
             points[layer] = {}
             for n in self.sequences[layer]['cut']:
                 points[layer][n], last_cut, warnings_in = self._path_to_points(cut, self.paths[layer][n], layer, n, last_cut)
                 warnings.extend(warnings_in)
-
         return points, warnings
 
     def _path_to_points(self, cut, path, layer, path_num, last_cut):
@@ -316,17 +316,14 @@ class ToPoints:
             # offset every vertex and set cut direction if this is a closed cut
             if cut and path.is_closed:
                 poly = Polygon(vertices).buffer(0)
-                offset_poly: Polygon | MultiPolygon = poly.buffer(offset, join_style=join_style)
+                offset_poly = cast(Polygon | MultiPolygon, poly.buffer(offset, join_style=join_style))
                 if offset_poly.is_empty:
                     warnings.append(f'Shape {path_num} is too constricted to offset')
                     return None
-                # if offset_poly.geom_type == 'Polygon':
-                if isinstance(offset_poly, Polygon):
-                    vertices = list(offset_poly.exterior.coords)
-                # elif offset_poly.geom_type == 'MultiPolygon':
-                elif isinstance(offset_poly, MultiPolygon):
-                    for p in offset_poly.geoms:
-                        vertices = list(p.exterior.coords)
+                # cater for Polygon or MultPolygon if shape squeezed enough to break into parts
+                polys = [offset_poly] if isinstance(offset_poly, Polygon) else list(offset_poly.geoms)# type: ignore
+                for p in polys:
+                    vertices = list(p.exterior.coords)
             # set counter clockwise and internal as the default
             if not external_cut:
                 vertices.reverse()
@@ -494,22 +491,24 @@ class ToGcode:
         for layer in self.layers:
             if layer not in self.ignored:
                 for n, point in enumerate(self.sequences[layer]['cut']):
-                    gcode.append(f'\n;start of layer {layer}, cut #{n + 1}')
+                    gcode.append(f'\n;layer {layer}, cut #{n + 1}')
                     gcode.extend(self._gcode_from_points(self.points[layer][point], layer, point))
         gcode.append(f'\n{amble}\nM30')
         with open(gcode_file, 'w') as f:
             _ = f.write('\n'.join(gcode))
 
     def _gcode_from_points(self, points, layer, point):
-        print(layer, point, points)
         code = []
-        # make a segment list in cut order
+        # make a segment list in cut order, circles are three segments only
         raw = [p for p in points]
-        s1 = raw[:2] # first two are rapid and lead-in
-        s2 = raw[self.sequences[layer]['start'][point]:-1] # from cut start to second last point
-        s3 = raw[2:self.sequences[layer]['start'][point]] # from beginning to cut start
-        s4 = [raw[-1]] # last point
-        segments = s1 + s2 + s3 + s4
+        if len(raw) > 3:
+            s1 = raw[:2] # first two are rapid and lead-in
+            s2 = raw[self.sequences[layer]['start'][point]:-1] # from cut start to second last point
+            s3 = raw[2:self.sequences[layer]['start'][point]] # from beginning to cut start
+            s4 = [raw[-1]] # last point
+            segments = s1 + s2 + s3 + s4
+        else:
+            segments = raw
         # iterate through the segments
         for s in segments:
             if 'start' not in points[s]:
