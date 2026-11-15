@@ -70,17 +70,26 @@ class PopupMenu(CTk.CTkToplevel):
 class App(CTk.CTk):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+        # for the dxf_to_plasmac library
+        self.paths = {}
+        self.shape_points = {}
+        self.cut_points = {}
+        self.sequences = {}
+        self.layers = []
+        self.ignored = []
+        self.dxf_file = ''
         self.units = 'metric'
-        self.units_var = CTk.StringVar()
-        self.precision = 2
-        self.precision_var = CTk.StringVar()
-        self.lead_length = 3.3
-        self.lead_angle = 45
         self.lead_type = 'line'
-        self.lead_type_var = CTk.StringVar()
-        self.small_hole = 0
+        self.lead_length = 3.3
+        self.last_cut = (0.0, 0.0)
         self.flattening_distance = 0.025
         self.gap_tolerance = 0.001
+        self.lead_angle = 45
+        self.precision = 2
+        self.small_hole = 0
+        self.doc = ''
+        # color preferences
         self.canvas_color = ''
         self.rapid_color = ''
         self.cut_color_internal = ''
@@ -89,10 +98,15 @@ class App(CTk.CTk):
         self.leadin_color = ''
         self.selected_color = ''
         self.invalid_color = ''
+
         self.current_path = str(Path.home())
         self.prefs_file = str(Path.home() / 'dxf2plasmac.pref')
         self.material_dict = {}
         self.material_file = ''
+        # tkinter preferences
+        self.units_var = CTk.StringVar()
+        self.precision_var = CTk.StringVar()
+        self.lead_type_var = CTk.StringVar()
         self.material_file_var = CTk.StringVar()
         self.material_var = CTk.StringVar()
         self.feed_r_var = CTk.StringVar()
@@ -101,8 +115,7 @@ class App(CTk.CTk):
         self.pierce_h_var = CTk.StringVar()
         self.pierce_d_var = CTk.StringVar()
         self.load_preferences()
-        # self.script_path = Path(__file__).parent
-        # set up window
+        # window set up
         CTk.set_default_color_theme('dark-blue') # blue, green, or dark-blue
         CTk.set_appearance_mode('dark') # light or dark
         self.minsize(760, 540)
@@ -111,13 +124,6 @@ class App(CTk.CTk):
         self.protocol('WM_DELETE_WINDOW', self.shutdown)
         self.title('dxf2PlasmaC')
 
-        self.dxf_file = ''
-        self.paths = {}
-        self.shape_points = {}
-        self.cut_points = {}
-        self.sequences = {}
-        self.reversed = {}
-        self.last_cut = (0.0, 0.0)
         self.show_rapids = True
         self.rapid_arrow_len = 5
         self.canvas_size = (1, 1)
@@ -127,17 +133,11 @@ class App(CTk.CTk):
         self.loaded_file = ''
         self.selected_item = ''
         self.mouse = (0, 0)
-        self.epsilon = 1e-6
         self.gcode_file = ''
         self.mod_key = 'Command' if sys.platform == 'darwin' else 'Control'
         self.size = (0.0, 0.0)
         self.tt_delay = 0.6 # tooltip delay
         self.icon_path = get_asset_path('assets/icons')
-        self.ignored = []
-        self.layers = []
-        self.doc = ''
-        self.error = ''
-        self.converter = None
 
         self.create_main_page()
         self.create_prefs_frame()
@@ -563,6 +563,13 @@ class App(CTk.CTk):
             elif itemType == 'arc':
                 self.canvas.itemconfig(self.selected_item, outline=color)
 
+    def reload(self, _event):
+        ''' reload the current file or project '''
+        if self.loaded_file and not self.dxf_file:
+            self.load_project(f'{self.current_path}/{self.loaded_file}.d2p')
+        elif self.loaded_file and self.dxf_file:
+            self.load_dxf(self.dxf_file)
+
     def open_project(self, _event):
         file = Open(parent=self,
                     title='Open Project',
@@ -570,23 +577,26 @@ class App(CTk.CTk):
                     initialdir=self.current_path,
                     initialfile = self.loaded_file)
         if file:
-            self.title(f'dxf2PlasmaC     project file: {Path(file).name}')
-            self.current_path = str(Path(file).parent)
-            with open(file, 'rb') as f:
-                self.doc = pickle.load(f)
-                self.paths = pickle.load(f)
-                self.cut_points = pickle.load(f)
-                self.shape_points = pickle.load(f)
-                self.sequences = pickle.load(f)
-                self.ignored = pickle.load(f)
-                self.layers = pickle.load(f)
-            self.dxf_file = ''
-            self.loaded_file = str(Path(file).stem)
-            self.new_file = True
-            self.selected_item = ''
-            self.last_cut = (0.0, 0.0)
-            self.create_layer_widgets()
-            self.do_plot()
+            self.load_project(file)
+
+    def load_project(self, file):
+        self.title(f'dxf2PlasmaC     project file: {Path(file).name}')
+        self.current_path = str(Path(file).parent)
+        with open(file, 'rb') as f:
+            self.doc = pickle.load(f)
+            self.paths = pickle.load(f)
+            self.cut_points = pickle.load(f)
+            self.shape_points = pickle.load(f)
+            self.sequences = pickle.load(f)
+            self.ignored = pickle.load(f)
+            self.layers = pickle.load(f)
+        self.dxf_file = ''
+        self.loaded_file = str(Path(file).stem)
+        self.new_file = True
+        self.selected_item = ''
+        self.last_cut = (0.0, 0.0)
+        self.create_layer_widgets()
+        self.do_plot()
 
     def save_project(self, _event):
         file = Save(parent=self,
@@ -606,35 +616,39 @@ class App(CTk.CTk):
                 pickle.dump(self.layers, f)
 
     def import_dxf(self, _event):
-        self.update()
+        # self.update()
         file = Open(parent=self,
                     title='Open DXF File',
                     filetypes=[('DXF File', '.dxf'), ('Any File', '*.*')],
                     initialdir=self.current_path)
-        self.update()
+        # self.update()
         if file:
-            self.title(f'dxf2PlasmaC     dxf file: {Path(file).name}')
-            self.current_path = str(Path(file).parent)
-            self.dxf_file = file
-            self.loaded_file = str(Path(file).stem)
-            self.new_file = True
-            self.ignored = []
-            self.converter = ToPaths(self.units, self.gap_tolerance, self.lead_type, self.lead_length, self.lead_angle)
-            self.doc, self.layers, self.paths, self.sequences, self.size, self.error = self.converter.get_paths(self.dxf_file)
-            if self.error:
-                title = 'File Open Error'
-                Msg.showerror(self, title, self.error)
-                return
-            self.create_layer_widgets()
-            post = 'mm' if self.units == 'metric' else 'in'
-            self.title(f'{self.title()}     Size: {self.size[0]}{post} x {self.size[1]}{post}')
-            self.shape_points = self.get_points('shape')
-            self.cut_points = self.get_points('cut')
-            self.do_plot()
+            self.load_dxf(file)
 
-    def get_points(self, mode):
-        sp = ToPoints(self.paths, self.layers, self.sequences, self.kerf_var.get(), self.precision, self.small_hole, self.last_cut, self.lead_angle, self.flattening_distance)
-        points, warnings = sp.get_points(mode)
+    def load_dxf(self, file):
+        self.title(f'dxf2PlasmaC     dxf file: {Path(file).name}')
+        self.current_path = str(Path(file).parent)
+        self.dxf_file = file
+        self.loaded_file = str(Path(file).stem)
+        self.new_file = True
+        self.ignored = []
+        error = None
+        to_paths = ToPaths(self.units, self.lead_type, self.lead_length, self.lead_angle, self.flattening_distance, self.gap_tolerance)
+        self.doc, self.layers, self.paths, self.sequences, self.size, error = to_paths.get_paths(self.dxf_file)
+        if error:
+            title = 'File Open Error'
+            Msg.showerror(self, title, error)
+            return
+        self.create_layer_widgets()
+        post = 'mm' if self.units == 'metric' else 'in'
+        self.title(f'{self.title()}     Size: {self.size[0]}{post} x {self.size[1]}{post}')
+        self.shape_points = self.get_points('shape')
+        self.cut_points = self.get_points('cut')
+        self.do_plot()
+
+    def get_points(self, mode: str):
+        to_points = ToPoints(self.paths, self.layers, self.sequences, self.kerf_var.get(), self.precision, self.small_hole, self.last_cut, self.lead_angle, self.flattening_distance)
+        points, warnings = to_points.get_points(mode)
         if warnings:
             title = 'Cut Warnings'
             message = "\n".join(warnings)
@@ -656,8 +670,8 @@ class App(CTk.CTk):
             material['ch'] = self.cut_h_var.get()
             material['fr'] = self.feed_r_var.get()
             material['kw'] = self.kerf_var.get()
-            gc = ToGcode(self.cut_points, self.layers, self.sequences, self.ignored, self.precision)
-            gc.write_gcode(file, self.small_hole, self.units, material)
+            to_gcode = ToGcode(self.cut_points, self.layers, self.sequences, self.ignored, self.precision)
+            to_gcode.write_gcode(file, self.small_hole, self.units, material)
 
     def show_preferences_frame(self, _event):
         self.prefs_frame.lift()
@@ -710,77 +724,95 @@ class App(CTk.CTk):
         label_material.grid(row=0, column=0, padx=4, pady=(4, 0), sticky='ew')
         self.material_select = CTk.CTkOptionMenu(mat, width=240, variable=self.material_var, values=['None'], command=self.material_selected, anchor='w')
         self.material_select.grid(row=0, column=1, padx=4, pady=0, sticky='nsew')
-
     def create_menu_bar(self):
         menu = CTk.CTkFrame(self.main_frame)
         menu.grid(row=0, column=0, columnspan=2, sticky='ew')
-        menu.grid_columnconfigure(8, weight=1)
+        # menu.grid_columnconfigure(8, weight=1)
         size = 36
+        col = 0
         im = CTk.CTkImage(Image.open(f'{self.icon_path}/import_dxf.png'), size=(size, size))
         iml = CTk.CTkLabel(master = menu, image=im, width=size, height=size, bg_color='gray60', text='')
         iml.image = im
         iml.bind('<Button-1>', self.import_dxf)
-        iml.grid(row=0, column=0, padx=(2, 0), pady=(2, 0))
+        iml.grid(row=0, column=col, padx=(2, 0), pady=(2, 0))
+        col += 1
         ex = CTk.CTkImage(Image.open(f'{self.icon_path}/export_gcode.png'), size=(size, size))
         exl = CTk.CTkLabel(master = menu, image=ex, width=size, height=size, bg_color='gray60', text='')
         exl.image = ex
         exl.bind('<Button-1>', self.export_gcode)
-        exl.grid(row=0, column=1, padx=(4, 0), pady=(2, 0))
+        exl.grid(row=0, column=col, padx=(4, 0), pady=(2, 0))
+        col += 1
+        rl = CTk.CTkImage(Image.open(f'{self.icon_path}/reload.png'), size=(size, size))
+        rll = CTk.CTkLabel(master = menu, image=rl, width=size, height=size, bg_color='gray60', text='')
+        rll.image = rl
+        rll.bind('<Button-1>', self.reload)
+        rll.grid(row=0, column=col, padx=(24, 0), pady=(2, 0))
+        col += 1
         op = CTk.CTkImage(Image.open(f'{self.icon_path}/open_project.png'), size=(size, size))
         opl = CTk.CTkLabel(master = menu, image=op, width=size, height=size, bg_color='gray60', text='')
         opl.image = op
         opl.bind('<Button-1>', self.open_project)
-        opl.grid(row=0, column=2, padx=(24, 0), pady=(4, 2))
+        opl.grid(row=0, column=col, padx=(24, 0), pady=(4, 2))
+        col += 1
         sp = CTk.CTkImage(Image.open(f'{self.icon_path}/save_project.png'), size=(size, size))
         spl = CTk.CTkLabel(master = menu, image=sp, width=size, height=size, bg_color='gray60', text='')
         spl.image = sp
         spl.bind('<Button-1>', self.save_project)
-        spl.grid(row=0, column=3, padx=(4, 0), pady=(2, 0))
+        spl.grid(row=0, column=col, padx=(4, 0), pady=(2, 0))
+        col += 1
         si = CTk.CTkImage(Image.open(f'{self.icon_path}/settings.png'), size=(size, size))
         sl = CTk.CTkLabel(master = menu, image=si, width=size, height=size, bg_color='gray60', text='')
         sl.image = si
         sl.bind('<Button-1>', self.show_preferences_frame)
-        sl.grid(row=0, column=5, padx=(24, 0), pady=(2, 0))
+        sl.grid(row=0, column=col, padx=(24, 0), pady=(2, 0))
+        col += 1
         a = CTk.CTkImage(Image.open(f'{self.icon_path}/info.png'), size=(size, size))
         al = CTk.CTkLabel(master = menu, image=a, width=size, height=size, bg_color='gray60', text='')
         al.image = a
         al.bind('<Button-1>', self.show_about)
-        al.grid(row=0, column=6, padx=(24, 0), pady=(2, 0))
+        al.grid(row=0, column=col, padx=(24, 0), pady=(2, 0))
+        col += 1
         za = CTk.CTkImage(Image.open(f'{self.icon_path}/zoom_all.png'), size=(size, size))
         zal = CTk.CTkLabel(master = menu, image=za, width=size, height=size, bg_color='gray60', text='')
         zal.image = za
         zal.bind('<Button-1>', self.zoom_all)
-        zal.grid(row=0, column=9, padx=(4, 0), pady=(2, 0))
+        zal.grid(row=0, column=col, padx=(100, 0), pady=(2, 0))
+        col += 1
         zi = CTk.CTkImage(Image.open(f'{self.icon_path}/zoom_in.png'), size=(size, size))
         zil = CTk.CTkLabel(master = menu, image=zi, width=size, height=size, bg_color='gray60', text='')
         zil.image = zi
         zil.bind('<Button-1>', self.zoom_in)
-        zil.grid(row=0, column=10, padx=(8, 0), pady=(2, 0))
+        zil.grid(row=0, column=col, padx=(24, 0), pady=(2, 0))
+        col += 1
         zo = CTk.CTkImage(Image.open(f'{self.icon_path}/zoom_out.png'), size=(size, size))
         zol = CTk.CTkLabel(master = menu, image=zo, width=size, height=size, bg_color='gray60', text='')
         zol.image = zo
         zol.bind('<Button-1>', self.zoom_out)
-        zol.grid(row=0, column=11, padx=(4, 0), pady=(2, 0))
+        zol.grid(row=0, column=col, padx=(4, 0), pady=(2, 0))
+        col += 1
         pl = CTk.CTkImage(Image.open(f'{self.icon_path}/pan_left.png'), size=(size, size))
         pll = CTk.CTkLabel(master = menu, image=pl, width=size, height=size, bg_color='gray60', text='')
         pll.image = pl
         pll.bind('<Button-1>', self.pan_left)
-        pll.grid(row=0, column=12, padx=(8, 0), pady=(2, 0))
+        pll.grid(row=0, column=col, padx=(24, 0), pady=(2, 0))
+        col += 1
         pr = CTk.CTkImage(Image.open(f'{self.icon_path}/pan_right.png'), size=(size, size))
         prl = CTk.CTkLabel(master = menu, image=pr, width=size, height=size, bg_color='gray60', text='')
         prl.image = pr
         prl.bind('<Button-1>', self.pan_right)
-        prl.grid(row=0, column=13, padx=(4, 0), pady=(2, 0))
+        prl.grid(row=0, column=col, padx=(4, 0), pady=(2, 0))
+        col += 1
         pu = CTk.CTkImage(Image.open(f'{self.icon_path}/pan_up.png'), size=(size, size))
         pul = CTk.CTkLabel(master = menu, image=pu, width=size, height=size, bg_color='gray60', text='')
         pul.image = pu
         pul.bind('<Button-1>', self.pan_up)
-        pul.grid(row=0, column=14, padx=(4, 0), pady=(2, 0))
+        pul.grid(row=0, column=col, padx=(4, 0), pady=(2, 0))
+        col += 1
         pd = CTk.CTkImage(Image.open(f'{self.icon_path}/pan_down.png'), size=(size, size))
         pdl = CTk.CTkLabel(master = menu, image=pd, width=size, height=size, bg_color='gray60', text='')
         pdl.image = pd
         pdl.bind('<Button-1>', self.pan_down)
-        pdl.grid(row=0, column=15, padx=(4, 2), pady=(2, 0))
+        pdl.grid(row=0, column=col, padx=(4, 2), pady=(2, 0))
 
     def create_side_bar(self):
         side = CTk.CTkFrame(self.main_frame)
@@ -957,43 +989,52 @@ class App(CTk.CTk):
         self.save_preferences()
 
     def apply_prefs(self):
+        print('apply prefs')
+        print(self.lead_length)
         self.get_preferences()
+        print(self.lead_length)
         self.canvas.config(bg=self.canvas_color)
+
+        for layer in self.layers:
+            for path in self.sequences[layer]['lead-in']:
+                self.sequences[layer]['lead-in'][path]['length'] = self.lead_length
+                self.sequences[layer]['lead-in'][path]['angle'] = self.lead_angle
+                self.sequences[layer]['lead-in'][path]['type'] = self.lead_type
+                # print(self.sequences[layer]['lead-in'][path]['length'])
+
+        # l_length = self.sequences[layer]['lead-in'][path_num]['length']
+        # l_angle = self.sequences[layer]['lead-in'][path_num]['angle']
+        # arc_lead = self.sequences[layer]['lead-in'][path_num]['type'] == 'arc'
+
+
+
         if self.loaded_file:
             self.last_cut = (0.0, 0.0)
             self.cut_points = self.get_points('cut')
             self.do_plot()
 
     def close_prefs(self):
+        ''' close preferences window '''
         self.prefs_frame.lower()
 
-    def apply_materials(self):
-        if self.loaded_file:
-            self.last_cut = (0.0, 0.0)
-            self.cut_points = self.get_points('cut')
-            self.do_plot()
-
-    def close_materials(self):
-        self.materials_frame.lower()
-
-#FIXME - layer 0 doesn't seem to work in itemconfig
     def toggle_layer(self, layer, widget):
+        ''' toggle vivibility of layer '''
         if widget.get():
             self.ignored.remove(layer)
             state = 'normal'
         else:
             self.ignored.append(layer)
             state = 'hidden'
-        # self.do_plot()
-        # self.zoom_all()
         self.canvas.itemconfig(layer, state=state)
 
     def toggle_rapids(self):
+        ''' toggle visibility of rapid moves '''
         state = 'hidden' if self.show_rapids else 'normal'
         self.canvas.itemconfig('rapid', state=state)
         self.show_rapids = not self.show_rapids
 
     def set_color(self, widget, title='title'):
+        ''' select a new color '''
         color = Color(title=f'Choose A {title} Color', initial_color=widget.cget('fg_color')).get()
         if color:
             widget.configure(text=color, fg_color=color)
@@ -1001,6 +1042,7 @@ class App(CTk.CTk):
         self.focus_force()
 
     def load_material_file(self):
+        ''' load materials form material file '''
         self.material_file_var.set(Path(self.material_file).name)
         with open(self.material_file, 'r') as f:
             materials = f.readlines()
@@ -1044,6 +1086,7 @@ class App(CTk.CTk):
         self.material_selected(min(opts))
 
     def material_selected(self, material):
+        ''' populate material values from selected material '''
         num = material.split(':')[0].strip()
         self.material_var.set(f'{num}:  {self.material_dict[num]['NAME']}')
         self.feed_r_var.set(self.material_dict[num]['CUT_SPEED'])
@@ -1055,6 +1098,7 @@ class App(CTk.CTk):
         self.do_plot()
 
     def kerf_changed(self, value):
+        ''' kerf width changed so redraw '''
         try:
             _ = float(value)
             self.cut_points = self.get_points('cut')
@@ -1106,6 +1150,7 @@ class App(CTk.CTk):
         self.invalid_pref.configure(text=self.invalid_color, fg_color=self.invalid_color)
 
     def load_preferences(self):
+        ''' load variables with appropriate values from preferences file '''
         if Path.is_file(self.prefs_file):
             with open(self.prefs_file, 'r') as f:
                 for line in f:
@@ -1183,6 +1228,7 @@ class App(CTk.CTk):
             self.save_preferences()
 
     def save_preferences(self):
+        ''' save variables values to preferences file '''
         with open(self.prefs_file, 'w') as f:
             f.write(f'Units = {self.units}\n')
             f.write(f'Precision = {self.precision}\n')

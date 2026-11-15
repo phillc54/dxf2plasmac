@@ -15,21 +15,18 @@ from ezdxf.path import make_path
 from shapely import BufferJoinStyle
 from shapely.geometry import MultiPolygon, Polygon
 
-# from shapely.geometry.base import BaseGeometry
-
 epsilon = 1e-6
 join_style = BufferJoinStyle.round # round, mitre, or bevel
 
-
 class ToPaths:
-    def __init__(
-        self, units='metric', gap_tolerance=0.01, lead_type='line', lead_length=5.0, lead_angle=45.0, flattening_distance=0.1):
+    def __init__(self, units: str, lead_type: str, lead_length: float, lead_angle: int,
+                 flattening_distance: float, gap_tolerance: float):
         self.units = units
-        self.gap_tolerance = gap_tolerance
         self.lead_type = lead_type
         self.lead_length = lead_length
         self.lead_angle = lead_angle
         self.flattening_distance = flattening_distance
+        self.gap_tolerance = gap_tolerance
         self.doc = None
         self.layers = []
         self.paths = {}
@@ -37,7 +34,7 @@ class ToPaths:
         self.size = (0.0, 0.0)
         self.error = None
 
-    def get_paths(self, dxf_file):
+    def get_paths(self, dxf_file: str):
         ''' load a dxf file, convert entities to paths, and build cut sequences '''
         self._reset()
         self._open_doc(dxf_file)
@@ -213,7 +210,9 @@ class ToPaths:
 
 
 class ToPoints:
-    def __init__(self, paths, layers, sequences, kerf, precision, small_hole, last_cut, lead_angle, flattening_distance):
+    def __init__(self, paths: dict[str, Any], layers: list[str], sequences: dict[str, Any],
+                 kerf: float, precision: int, small_hole: float, last_cut: tuple[float, float],
+                 lead_angle: float, flattening_distance: float):
         self.paths = paths
         self.layers = layers
         self.sequences = sequences
@@ -224,7 +223,7 @@ class ToPoints:
         self.lead_angle = lead_angle
         self.flattening_distance = flattening_distance
 
-    def get_points(self, mode):
+    def get_points(self, mode: str):
         cut = mode == 'cut'
         points = {}
         last_cut = (0.0, 0.0)
@@ -453,17 +452,16 @@ class ToPoints:
 
 
 class ToGcode:
-    def __init__(self, points, layers, sequences, ignored, precision):
+    def __init__(self, points: dict[str, Any], layers: list[str],
+                 sequences: dict[str, Any], ignored: list[str],
+                 precision: float):
         self.points = points
         self.layers = layers
         self.sequences = sequences
         self.ignored = ignored
-        # self.small_hole = small_hole
-        # self.units = units
         self.precision = precision
-        # self.material = material
 
-    def write_gcode(self, gcode_file, small_hole, units, material):
+    def write_gcode(self, gcode_file: str, small_hole: float, units: str, material: dict[str, Any]):
         unit = 'G21 ; units in millimeters' if units == 'metric' else 'G20 ; units in inches'
         blend = 0.1 if units == 'metric' else 0.004
         amble = (f'{unit}\n'
