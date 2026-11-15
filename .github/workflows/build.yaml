@@ -251,19 +251,19 @@ jobs:
       - name: Place packages in a release directory
         run: |
           mkdir release
-          if [ -f "artifacts/macos-arm64-dmg/dxf2PlasmaC-Mac-arm64.dmg"]; then
+          if [ -f "artifacts/macos-arm64-dmg/dxf2PlasmaC-Mac-arm64.dmg" ]; then
             cp artifacts/macos-arm64-dmg/dxf2PlasmaC-Mac-arm64.dmg release/
           fi
-          if [ -f "artifacts/dxf2plasmac-linux-x86_64/dxf2PlasmaC-Linux-x86_64.AppImage"]; then
+          if [ -f "artifacts/dxf2plasmac-linux-x86_64/dxf2PlasmaC-Linux-x86_64.AppImage" ]; then
           cp artifacts/dxf2plasmac-linux-x86_64/dxf2PlasmaC-Linux-x86_64.AppImage release/
           fi
-          if [ -f "artifacts/dxf2plasmac-linux-aarch64/dxf2PlasmaC-Linux-aarch64.AppImage"]; then
+          if [ -f "artifacts/dxf2plasmac-linux-aarch64/dxf2PlasmaC-Linux-aarch64.AppImage" ]; then
             cp artifacts/dxf2plasmac-linux-aarch64/dxf2PlasmaC-Linux-aarch64.AppImage release/
           fi
-          if [ -f "artifacts/dxf2plasmac-windows-x64/dxf2PlasmaC-Setup.exe"]; then
+          if [ -f "artifacts/dxf2plasmac-windows-x64/dxf2PlasmaC-Setup.exe" ]; then
             cp artifacts/dxf2plasmac-windows-x64/dxf2PlasmaC-Setup.exe release/dxf2PlasmaC-Windows-x64-Setup.exe
           fi
-          if [ -f "artifacts/dxf2plasmac-windows-arm64/dxf2PlasmaC-Setup.exe"]; then
+          if [ -f "artifacts/dxf2plasmac-windows-arm64/dxf2PlasmaC-Setup.exe" ]; then
             cp artifacts/dxf2plasmac-windows-arm64/dxf2PlasmaC-Setup.exe release/dxf2PlasmaC-Windows-arm64-Setup.exe
           fi
 
