@@ -18,7 +18,9 @@ import customtkinter as CTk
 from CTkColorPicker import AskColor as Color
 from PIL import Image
 
-from .dxf_to_plasmac import ToGcode, ToPaths, ToPoints
+from .dxf_to_plasmac import dxf2PlasmaC
+
+# ToGcode, ToPaths, ToPoints
 
 VERSION = '0.1.0'
 
@@ -72,23 +74,27 @@ class App(CTk.CTk):
         super().__init__(*args, **kwargs)
 
         # for the dxf_to_plasmac library
-        self.paths = {}
-        self.shape_points = {}
-        self.cut_points = {}
-        self.sequences = {}
-        self.layers = []
-        self.ignored = []
-        self.dxf_file = ''
-        self.units = 'metric'
-        self.lead_type = 'line'
-        self.lead_length = 3.3
-        self.last_cut = (0.0, 0.0)
-        self.flattening_distance = 0.025
-        self.gap_tolerance = 0.001
-        self.lead_angle = 45
-        self.precision = 2
-        self.small_hole = 0
-        self.doc = ''
+        # self.paths = {}
+        # self.shape_points = {}
+        # self.cut_points = {}
+        # self.sequences = {}
+        # self.layers = []
+        # self.ignored = []
+        # self.dxf_file = ''
+        # self.units = 'metric'
+        # self.lead_type = 'line'
+        # self.lead_length = 3.3
+        # self.last_cut = (0.0, 0.0)
+        # self.flattening_distance = 0.025
+        # self.gap_tolerance = 0.001
+        # self.lead_angle = 45
+        # self.precision = 2
+        # self.small_hole = 0
+        # self.doc = ''
+        # self.to_points = ''
+
+        self.D2P = dxf2PlasmaC()
+
         # color preferences
         self.canvas_color = ''
         self.rapid_color = ''
@@ -148,8 +154,9 @@ class App(CTk.CTk):
         self.set_preferences()
 
     def do_plot(self):
-        self.plot(self.shape_points, clear=True)
-        self.plot(self.cut_points, mode='cut', clear=False)
+        # print('self.D2P.shape_points:', self.D2P.shape_points)
+        self.plot(self.D2P.shape_points, clear=True)
+        self.plot(self.D2P.cut_points, mode='cut', clear=False)
         self.update()
         if self.canvas.winfo_ismapped():
             if self.new_file:
@@ -164,7 +171,7 @@ class App(CTk.CTk):
     def plot(self, points, mode:str='shape', clear:bool=False):
         ''' plot a job '''
         # the only difference between metric and inch are the origin pointer lengths
-        spot = 0.5 if self.units == 'metric' else 0.02
+        spot = 0.5 if self.D2P.units == 'metric' else 0.02
         seq = 0
         # delete all existing objects
         if clear:
@@ -177,10 +184,13 @@ class App(CTk.CTk):
             self.canvas.create_arc(-spot, -spot, spot, spot, start=180, extent=90, fill='black', outline='black', state='disabled')
             self.canvas.create_arc(-spot, -spot, spot, spot, start=270, extent=90, fill='white', outline='black', state='disabled')
         # iterate through points
-        for layer in self.layers:
-            if layer in self.ignored:
+        print(type(points))
+        for layer in self.D2P.layers:
+            if layer in self.D2P.ignored:
                 continue
-            for point in self.sequences[layer]['cut']:
+            for point in self.D2P.sequences[layer]['cut']:
+                print(f'M:{mode}   L:{layer}={type(layer)}   P:{point}={type(point)}')
+                # print(points[layer])
                  # shape was too small to offset
                 if not points[layer][point]:
                     seq += 1
@@ -194,8 +204,8 @@ class App(CTk.CTk):
                     fill = (self.shape_color if mode == 'shape' else
                             self.rapid_color if segment == 0 else
                             self.leadin_color if segment == 1 else
-                            self.cut_color_external if self.sequences[layer]['external'][point] else
-                            self.invalid_color if not self.sequences[layer]['lead-in'][point]['valid'] else
+                            self.cut_color_external if self.D2P.sequences[layer]['external'][point] else
+                            self.invalid_color if not self.D2P.sequences[layer]['lead-in'][point]['valid'] else
                             self.cut_color_internal)
                     seg_type = 'rapid' if segment == 0 else 'lead-in' if segment == 1 else 'feed'
                     tags = (mode, str(seq), str(line['seg']), fill, seg_type, f'layer_{layer}')
@@ -247,9 +257,9 @@ class App(CTk.CTk):
     def create_layer_widgets(self):
         for widget in self.layer_frame.winfo_children():
             widget.destroy()
-        for layer in self.layers:
+        for layer in self.D2P.layers:
             check = CTk.CTkCheckBox(self.layer_frame, text=layer)
-            if layer not in self.ignored:
+            if layer not in self.D2P.ignored:
                 check.select()
             check.configure(command=lambda c=check, l=f'layer_{layer}': self.toggle_layer(l, c))
             check.pack(padx=4, pady=(0, 4), expand=True, fill='x', anchor='w')
@@ -260,10 +270,10 @@ class App(CTk.CTk):
             tags = self.canvas.itemcget(self.selected_item, 'tags')
             seq = int(tags.split()[1])
             layer = tags.split()[5].split('_')[1]
-            cut = self.sequences[layer]['cut'][int(tags.split()[1])]
-            path = self.paths[layer][self.sequences[layer]['cut'][seq]]
+            cut = self.D2P.sequences[layer]['cut'][int(tags.split()[1])]
+            path = self.D2P.paths[layer][self.D2P.sequences[layer]['cut'][seq]]
             segment = int(tags.split()[2])
-            external_cut = self.sequences[layer]['external'][self.sequences[layer]['cut'][seq]]
+            external_cut = self.D2P.sequences[layer]['external'][self.D2P.sequences[layer]['cut'][seq]]
             radius = path.get('r', None) if isinstance(path, dict) else None
             opts = ['', '']
             if segment == 0:
@@ -271,19 +281,19 @@ class App(CTk.CTk):
             elif segment == 1:
                 # add 1 so user doesn't see cut sequence #0
                 title = f'Cut: #{seq + 1}   Lead-in'
-                opt1 = 'Line \u2192 Arc' if self.sequences[layer]['lead-in'][cut]['type'] == 'line' else 'Arc \u2192 Line'
-                if radius and radius < self.small_hole / 2 and not external_cut:
+                opt1 = 'Line \u2192 Arc' if self.D2P.sequences[layer]['lead-in'][cut]['type'] == 'line' else 'Arc \u2192 Line'
+                if radius and radius < self.D2P.small_hole / 2 and not external_cut:
                     opts = ['Change Length']
                 else:
                     opts = [opt1, 'Change Length']
-                    if self.sequences[layer]['lead-in'][cut]['type'] == 'line':
+                    if self.D2P.sequences[layer]['lead-in'][cut]['type'] == 'line':
                         opts.append('Change Angle')
                 color = self.leadin_color
             else:
                 # add 1 so user doesn't see cut sequence #0
                 # title = f'Cut: #{seq + 1}   Segment: #{segment + 1}'
                 title = f'Cut: #{seq + 1}   Segment: #{segment}'
-                opt1 = 'External \u2192 Internal' if self.sequences[layer]['external'][cut] else 'Internal \u2192 External'
+                opt1 = 'External \u2192 Internal' if self.D2P.sequences[layer]['external'][cut] else 'Internal \u2192 External'
                 if isinstance(path, dict): # circles
                     opts = [opt1, 'Change Cut Sequence', 'Change Start Angle']
                 elif path.is_closed:
@@ -297,45 +307,56 @@ class App(CTk.CTk):
             match modal.result:
                 case 'Line \u2192 Arc' | 'Arc \u2192 Line':
                     self.selected_item = ''
-                    self.last_cut = (0.0, 0.0)
-                    if self.sequences[layer]['lead-in'][cut]['type'] == 'line':
-                        self.sequences[layer]['lead-in'][cut]['type'] = 'arc'
-                    else:
-                        self.sequences[layer]['lead-in'][cut]['type'] = 'line'
-                    self.cut_points = self.get_points('cut')
+                    self.D2P.last_cut = (0.0, 0.0)
+                    # self.to_points.toggle_lead(self, layer, cut)
+                    self.D2P.toggle_lead(layer, cut)
+                    # if self.D2P.sequences[layer]['lead-in'][cut]['type'] == 'line':
+                    #     self.D2P.sequences[layer]['lead-in'][cut]['type'] = 'arc'
+                    # else:
+                    #     self.D2P.sequences[layer]['lead-in'][cut]['type'] = 'line'
+                    self.D2P.cut_points = self.get_points('cut')
                     self.do_plot()
                 case 'Change Length':
                     self.color_selected(self.canvas.type(self.selected_item), False)
                     self.selected_item = ''
-                    self.last_cut = (0.0, 0.0)
+                    self.D2P.last_cut = (0.0, 0.0)
                     self.after(100, self.lead_in_length, cut, radius, external_cut, layer)
                 case 'Change Angle':
                     self.color_selected(self.canvas.type(self.selected_item), False)
                     self.selected_item = ''
-                    self.last_cut = (0.0, 0.0)
+                    self.D2P.last_cut = (0.0, 0.0)
                     self.after(100, self.lead_in_angle, cut, layer)
                 case 'Internal \u2192 External' | 'External \u2192 Internal':
-                    self.sequences[layer]['external'][cut] = not self.sequences[layer]['external'][cut]
-                    # self.sequences[layer]['start'][cut] = 2
+                    before = self.D2P.sequences[layer]['start'][cut]
                     self.selected_item = ''
-                    self.last_cut = (0.0, 0.0)
-                    self.cut_points = self.get_points('cut')
+                    self.D2P.last_cut = (0.0, 0.0)
+                    # self.to_points.toggle_side(self, layer, cut)
+                    self.D2P.toggle_side(layer, cut)
+
+                    # self.D2P.sequences[layer]['external'][cut] = not self.D2P.sequences[layer]['external'][cut]
+                    # self.D2P.sequences[layer]['start'][cut] = 0
+                    # self.D2P.sequences[layer]['lead-in'][cut]['type'] = self.D2P.lead_type
+                    # self.D2P.cut_points = self.get_points('cut')
+
+
                     self.do_plot()
+                    after = self.D2P.sequences[layer]['start'][cut]
+                    print(f'cut:{cut}   before:{before}   after:{after}')
                 case 'Change Cut Sequence':
                     self.color_selected(self.canvas.type(self.selected_item), False)
                     self.selected_item = ''
-                    self.last_cut = (0.0, 0.0)
+                    self.D2P.last_cut = (0.0, 0.0)
                     self.after(100, self.change_sequence, cut, seq, layer)
                 case 'Set As Start Segment':
                     self.selected_item = ''
-                    self.last_cut = (0.0, 0.0)
-                    self.sequences[layer]['start'][cut] = segment
-                    self.cut_points = self.get_points('cut')
+                    self.D2P.last_cut = (0.0, 0.0)
+                    self.D2P.sequences[layer]['start'][cut] = segment
+                    self.D2P.cut_points = self.get_points('cut')
                     self.do_plot()
                 case 'Change Start Angle':
                     self.color_selected(self.canvas.type(self.selected_item), False)
                     self.selected_item = ''
-                    self.last_cut = (0.0, 0.0)
+                    self.D2P.last_cut = (0.0, 0.0)
                     self.after(100, self.change_start_angle, cut, seq, layer)
                 case _:
                     pass
@@ -345,8 +366,8 @@ class App(CTk.CTk):
 
     def change_sequence(self, cut, seq, layer):
         # add 1 here so user doesn't see cut sequence #0
-        mini = min(self.sequences[layer]['cut']) + 1
-        maxi = max(self.sequences[layer]['cut']) + 1
+        mini = min(self.D2P.sequences[layer]['cut']) + 1
+        maxi = max(self.D2P.sequences[layer]['cut']) + 1
         new_seq = Sd.askinteger('Cut Sequence',
                              f'Select a new cut position\nfrom {mini} to {maxi}',
                              initialvalue=seq + 1,
@@ -354,9 +375,9 @@ class App(CTk.CTk):
                              maxvalue=maxi,
                              parent=self)
         if new_seq is not None and new_seq != seq + 1:
-            self.sequences[layer]['cut'].remove(cut)
-            self.sequences[layer]['cut'].insert(new_seq - 1, cut)
-            self.cut_points = self.get_points('cut')
+            self.D2P.sequences[layer]['cut'].remove(cut)
+            self.D2P.sequences[layer]['cut'].insert(new_seq - 1, cut)
+            self.D2P.cut_points = self.get_points('cut')
             self.do_plot()
 
     def change_start_angle(self, cut, seq, layer):
@@ -364,38 +385,38 @@ class App(CTk.CTk):
         maxi = 359
         ang = Sd.askinteger('Cut Start Angle',
                              f'Select a new start position\nfrom {mini} to {maxi}',
-                             initialvalue=self.sequences[layer]['start'][cut],
+                             initialvalue=self.D2P.sequences[layer]['start'][cut],
                              minvalue=mini,
                              maxvalue=maxi,
                              parent=self)
         if ang is not None and ang != seq + 1:
-            self.sequences[layer]['start'][cut] = ang
-            self.cut_points = self.get_points('cut')
+            self.D2P.sequences[layer]['start'][cut] = ang
+            self.D2P.cut_points = self.get_points('cut')
             self.do_plot()
 
     def lead_in_length(self, cut, radius, external_cut, layer):
-        maxi = radius if radius and radius < self.small_hole and not external_cut else 10
+        maxi = radius if radius and radius < self.D2P.small_hole and not external_cut else 10
         length = Sd.askfloat('Lead-in Length',
                              f'Enter a new lead-in length\nfom 0 to {maxi}',
-                             initialvalue=self.sequences[layer]['lead-in'][cut]['length'],
+                             initialvalue=self.D2P.sequences[layer]['lead-in'][cut]['length'],
                              minvalue=0,
                              maxvalue=maxi,
                              parent=self)
         if length is not None:
-            self.sequences[layer]['lead-in'][cut]['length'] = length
-            self.cut_points = self.get_points('cut')
+            self.D2P.sequences[layer]['lead-in'][cut]['length'] = length
+            self.D2P.cut_points = self.get_points('cut')
             self.do_plot()
 
     def lead_in_angle(self, cut, layer):
         angle = Sd.askinteger('Lead-in Angle',
                              'Enter lead-in angle:',
-                             initialvalue=self.sequences[layer]['lead-in'][cut]['angle'],
+                             initialvalue=self.D2P.sequences[layer]['lead-in'][cut]['angle'],
                              minvalue=10,
                              maxvalue=90,
                              parent=self)
         if angle is not None:
-            self.sequences[layer]['lead-in'][cut]['angle'] = angle
-            self.cut_points = self.get_points('cut')
+            self.D2P.sequences[layer]['lead-in'][cut]['angle'] = angle
+            self.D2P.cut_points = self.get_points('cut')
             self.do_plot()
 
     def zoom_in(self, _event):
@@ -565,10 +586,10 @@ class App(CTk.CTk):
 
     def reload(self, _event):
         ''' reload the current file or project '''
-        if self.loaded_file and not self.dxf_file:
+        if self.loaded_file and not self.D2P.dxf_file:
             self.load_project(f'{self.current_path}/{self.loaded_file}.d2p')
-        elif self.loaded_file and self.dxf_file:
-            self.load_dxf(self.dxf_file)
+        elif self.loaded_file and self.D2P.dxf_file:
+            self.load_dxf(self.D2P.dxf_file)
 
     def open_project(self, _event):
         file = Open(parent=self,
@@ -583,18 +604,18 @@ class App(CTk.CTk):
         self.title(f'dxf2PlasmaC     project file: {Path(file).name}')
         self.current_path = str(Path(file).parent)
         with open(file, 'rb') as f:
-            self.doc = pickle.load(f)
-            self.paths = pickle.load(f)
-            self.cut_points = pickle.load(f)
-            self.shape_points = pickle.load(f)
-            self.sequences = pickle.load(f)
-            self.ignored = pickle.load(f)
-            self.layers = pickle.load(f)
-        self.dxf_file = ''
+            self.D2P.doc = pickle.load(f)
+            self.D2P.paths = pickle.load(f)
+            self.D2P.cut_points = pickle.load(f)
+            self.D2P.shape_points = pickle.load(f)
+            self.D2P.sequences = pickle.load(f)
+            self.D2P.ignored = pickle.load(f)
+            self.D2P.layers = pickle.load(f)
+        self.D2P.dxf_file = ''
         self.loaded_file = str(Path(file).stem)
         self.new_file = True
         self.selected_item = ''
-        self.last_cut = (0.0, 0.0)
+        self.D2P.last_cut = (0.0, 0.0)
         self.create_layer_widgets()
         self.do_plot()
 
@@ -607,13 +628,13 @@ class App(CTk.CTk):
         if file:
             self.current_path = str(Path(file).parent)
             with open(file, 'wb') as f:
-                pickle.dump(self.doc, f)
-                pickle.dump(self.paths, f)
-                pickle.dump(self.cut_points, f)
-                pickle.dump(self.shape_points, f)
-                pickle.dump(self.sequences, f)
-                pickle.dump(self.ignored, f)
-                pickle.dump(self.layers, f)
+                pickle.dump(self.D2P.doc, f)
+                pickle.dump(self.D2P.paths, f)
+                pickle.dump(self.D2P.cut_points, f)
+                pickle.dump(self.D2P.shape_points, f)
+                pickle.dump(self.D2P.sequences, f)
+                pickle.dump(self.D2P.ignored, f)
+                pickle.dump(self.D2P.layers, f)
 
     def import_dxf(self, _event):
         # self.update()
@@ -628,27 +649,29 @@ class App(CTk.CTk):
     def load_dxf(self, file):
         self.title(f'dxf2PlasmaC     dxf file: {Path(file).name}')
         self.current_path = str(Path(file).parent)
-        self.dxf_file = file
+        self.D2P.dxf_file = file
         self.loaded_file = str(Path(file).stem)
         self.new_file = True
-        self.ignored = []
+        self.D2P.ignored = []
         error = None
-        to_paths = ToPaths(self.units, self.lead_type, self.lead_length, self.lead_angle, self.flattening_distance, self.gap_tolerance)
-        self.doc, self.layers, self.paths, self.sequences, self.size, error = to_paths.get_paths(self.dxf_file)
+        # to_paths = ToPaths(self.units, self.lead_type, self.lead_length, self.lead_angle, self.flattening_distance, self.gap_tolerance)
+        # self.doc, self.layers, self.paths, self.sequences, self.size, error = to_paths.get_paths(self.D2P.dxf_file)
+        self.D2P.get_paths(self.D2P.dxf_file)
         if error:
             title = 'File Open Error'
             Msg.showerror(self, title, error)
             return
         self.create_layer_widgets()
-        post = 'mm' if self.units == 'metric' else 'in'
+        post = 'mm' if self.D2P.units == 'metric' else 'in'
         self.title(f'{self.title()}     Size: {self.size[0]}{post} x {self.size[1]}{post}')
-        self.shape_points = self.get_points('shape')
-        self.cut_points = self.get_points('cut')
+        self.D2P.shape_points = self.get_points('shape')
+        self.D2P.cut_points = self.get_points('cut')
         self.do_plot()
 
     def get_points(self, mode: str):
-        to_points = ToPoints(self.paths, self.layers, self.sequences, self.kerf_var.get(), self.precision, self.small_hole, self.last_cut, self.lead_angle, self.flattening_distance)
-        points, warnings = to_points.get_points(mode)
+        # self.to_points = ToPoints(self.paths, self.layers, self.sequences, self.kerf_var.get(), self.precision, self.small_hole, self.last_cut, self.lead_angle, self.flattening_distance)
+        # self.to_points = ToPoints(self)
+        points, warnings = self.D2P.get_points(mode)
         if warnings:
             title = 'Cut Warnings'
             message = "\n".join(warnings)
@@ -670,8 +693,8 @@ class App(CTk.CTk):
             material['ch'] = self.cut_h_var.get()
             material['fr'] = self.feed_r_var.get()
             material['kw'] = self.kerf_var.get()
-            to_gcode = ToGcode(self.cut_points, self.layers, self.sequences, self.ignored, self.precision)
-            to_gcode.write_gcode(file, self.small_hole, self.units, material)
+            # to_gcode = ToGcode(self.cut_points, self.layers, self.sequences, self.ignored, self.precision)
+            self.D2P.write_gcode(file)#, self.small_hole, self.units, material)
 
     def show_preferences_frame(self, _event):
         self.prefs_frame.lift()
@@ -856,7 +879,7 @@ class App(CTk.CTk):
         if self.material_file:
             self.load_material_file()
         else:
-            if self.units == 'metric':
+            if self.D2P.units == 'metric':
                 self.kerf_var.set(1)
                 self.feed_r_var.set(1000)
                 self.cut_h_var.set(1)
@@ -990,27 +1013,27 @@ class App(CTk.CTk):
 
     def apply_prefs(self):
         print('apply prefs')
-        print(self.lead_length)
+        print(self.D2P.lead_length)
         self.get_preferences()
-        print(self.lead_length)
+        print(self.D2P.lead_length)
         self.canvas.config(bg=self.canvas_color)
 
-        for layer in self.layers:
-            for path in self.sequences[layer]['lead-in']:
-                self.sequences[layer]['lead-in'][path]['length'] = self.lead_length
-                self.sequences[layer]['lead-in'][path]['angle'] = self.lead_angle
-                self.sequences[layer]['lead-in'][path]['type'] = self.lead_type
-                # print(self.sequences[layer]['lead-in'][path]['length'])
+        for layer in self.D2P.layers:
+            for path in self.D2P.sequences[layer]['lead-in']:
+                self.D2P.sequences[layer]['lead-in'][path]['length'] = self.D2P.lead_length
+                self.D2P.sequences[layer]['lead-in'][path]['angle'] = self.D2P.lead_angle
+                self.D2P.sequences[layer]['lead-in'][path]['type'] = self.D2P.lead_type
+                # print(self.D2P.sequences[layer]['lead-in'][path]['length'])
 
-        # l_length = self.sequences[layer]['lead-in'][path_num]['length']
-        # l_angle = self.sequences[layer]['lead-in'][path_num]['angle']
-        # arc_lead = self.sequences[layer]['lead-in'][path_num]['type'] == 'arc'
+        # l_length = self.D2P.sequences[layer]['lead-in'][path_num]['length']
+        # l_angle = self.D2P.sequences[layer]['lead-in'][path_num]['angle']
+        # arc_lead = self.D2Psequences[layer]['lead-in'][path_num]['type'] == 'arc'
 
 
 
         if self.loaded_file:
-            self.last_cut = (0.0, 0.0)
-            self.cut_points = self.get_points('cut')
+            self.D2P.last_cut = (0.0, 0.0)
+            self.D2P.cut_points = self.get_points('cut')
             self.do_plot()
 
     def close_prefs(self):
@@ -1020,10 +1043,10 @@ class App(CTk.CTk):
     def toggle_layer(self, layer, widget):
         ''' toggle vivibility of layer '''
         if widget.get():
-            self.ignored.remove(layer)
+            self.D2P.ignored.remove(layer)
             state = 'normal'
         else:
-            self.ignored.append(layer)
+            self.D2P.ignored.append(layer)
             state = 'hidden'
         self.canvas.itemconfig(layer, state=state)
 
@@ -1094,28 +1117,28 @@ class App(CTk.CTk):
         self.pierce_h_var.set(self.material_dict[num]['PIERCE_HEIGHT'])
         self.pierce_d_var.set(self.material_dict[num]['PIERCE_DELAY'])
         self.cut_h_var.set(self.material_dict[num]['CUT_HEIGHT'])
-        self.cut_points = self.get_points('cut')
+        self.D2P.cut_points = self.get_points('cut')
         self.do_plot()
 
     def kerf_changed(self, value):
         ''' kerf width changed so redraw '''
         try:
             _ = float(value)
-            self.cut_points = self.get_points('cut')
+            self.D2P.cut_points = self.get_points('cut')
             self.do_plot()
         except ValueError:
             pass
 
     def get_preferences(self):
         ''' applies preference page widget values to the preference variables '''
-        self.units = self.units_var.get()
-        self.precision = int(self.precision_var.get())
-        self.lead_length = float(self.lead_length_pref.get())
-        self.lead_angle = int(self.lead_angle_pref.get())
-        self.lead_type = self.lead_type_var.get()
-        self.small_hole = float(self.small_hole_pref.get())
-        self.flattening_distance = float(self.flattening_pref.get())
-        self.gap_tolerance = float(self.gap_pref.get())
+        self.D2P.units = self.units_var.get()
+        self.D2P.precision = int(self.precision_var.get())
+        self.D2P.lead_length = float(self.lead_length_pref.get())
+        self.D2P.lead_angle = int(self.lead_angle_pref.get())
+        self.D2P.lead_type = self.lead_type_var.get()
+        self.D2P.small_hole = float(self.small_hole_pref.get())
+        self.D2P.flattening_distance = float(self.flattening_pref.get())
+        self.D2P.gap_tolerance = float(self.gap_pref.get())
         self.canvas_color = self.canvas_bg_pref.cget('text')
         self.rapid_color = self.rapid_pref.cget('text')
         self.cut_color_internal = self.internal_pref.cget('text')
@@ -1127,19 +1150,19 @@ class App(CTk.CTk):
 
     def set_preferences(self):
         ''' applies preference variable values to the preference page widgets '''
-        self.units_var.set(self.units)
-        self.precision_var.set(self.precision)
+        self.units_var.set(self.D2P.units)
+        self.precision_var.set(self.D2P.precision)
         self.lead_length_pref.delete(0, CTk.END)
-        self.lead_length_pref.insert(0, self.lead_length)
+        self.lead_length_pref.insert(0, self.D2P.lead_length)
         self.lead_angle_pref.delete(0, CTk.END)
-        self.lead_angle_pref.insert(0, self.lead_angle)
-        self.lead_type_var.set(self.lead_type)
+        self.lead_angle_pref.insert(0, self.D2P.lead_angle)
+        self.lead_type_var.set(self.D2P.lead_type)
         self.small_hole_pref.delete(0, CTk.END)
-        self.small_hole_pref.insert(0, self.small_hole)
+        self.small_hole_pref.insert(0, self.D2P.small_hole)
         self.flattening_pref.delete(0, CTk.END)
-        self.flattening_pref.insert(0, self.flattening_distance)
+        self.flattening_pref.insert(0, self.D2P.flattening_distance)
         self.gap_pref.delete(0, CTk.END)
-        self.gap_pref.insert(0, self.gap_tolerance)
+        self.gap_pref.insert(0, self.D2P.gap_tolerance)
         self.canvas_bg_pref.configure(text=self.canvas_color, fg_color=self.canvas_color)
         self.rapid_pref.configure(text=self.rapid_color, fg_color=self.rapid_color)
         self.internal_pref.configure(text=self.cut_color_internal, fg_color=self.cut_color_internal)
@@ -1157,21 +1180,21 @@ class App(CTk.CTk):
                     parameter, data = line.split('=')
                     match(parameter.strip()):
                         case 'Units':
-                            self.units = data.strip()
+                            self.D2P.units = data.strip()
                         case 'Precision':
-                            self.precision = int(data.strip())
+                            self.D2P.precision = int(data.strip())
                         case 'Lead-in Length':
-                            self.lead_length = float(data.strip())
+                            self.D2P.lead_length = float(data.strip())
                         case  'Lead-in Angle':
-                            self.lead_angle = int(data.strip())
+                            self.D2P.lead_angle = int(data.strip())
                         case 'Lead-in Type':
-                            self.lead_type = data.strip()
+                            self.D2P.lead_type = data.strip()
                         case 'Small Hole Diameter':
-                            self.small_hole = float(data.strip())
+                            self.D2P.small_hole = float(data.strip())
                         case  'Arc Flattening Distance':
-                            self.flattening_distance = float(data.strip())
+                            self.D2P.flattening_distance = float(data.strip())
                         case  'Gap Tolerance':
-                            self.gap_tolerance = float(data.strip())
+                            self.D2P.gap_tolerance = float(data.strip())
                         case 'Canvas Back':
                             self.canvas_color = data.strip()
                         case 'Rapid Move':
@@ -1202,20 +1225,20 @@ class App(CTk.CTk):
             metric = Msg.askyesno(self, title, message)
             match(metric):
                 case 'Yes':
-                    self.units = 'metric'
-                    self.precision = 2
-                    self.lead_length = 5.0
-                    self.small_hole = 32.0
-                    self.flattening_distance = 0.025
-                    self.gap_tolerance = 0.001
+                    self.D2P.units = 'metric'
+                    self.D2P.precision = 2
+                    self.D2P.lead_length = 5.0
+                    self.D2P.small_hole = 32.0
+                    self.D2P.flattening_distance = 0.025
+                    self.D2P.gap_tolerance = 0.001
                 case _:
-                    self.units = 'dinosaur'
-                    self.precision = 2
-                    self.lead_length = 0.2
-                    self.small_hole = 1.25
-                    self.gap_tolerance = 0.00004
-            self.lead_angle = 45
-            self.lead_type = 'line'
+                    self.D2P.units = 'dinosaur'
+                    self.D2P.precision = 2
+                    self.D2P.lead_length = 0.2
+                    self.D2P.small_hole = 1.25
+                    self.D2P.gap_tolerance = 0.00004
+            self.D2P.lead_angle = 45
+            self.D2P.lead_type = 'line'
             self.canvas_color = '#bfbfbf'
             self.rapid_color = '#e5e5e5'
             self.cut_color_internal = '#00ffff'
@@ -1230,14 +1253,14 @@ class App(CTk.CTk):
     def save_preferences(self):
         ''' save variables values to preferences file '''
         with open(self.prefs_file, 'w') as f:
-            f.write(f'Units = {self.units}\n')
-            f.write(f'Precision = {self.precision}\n')
-            f.write(f'Lead-in Length = {self.lead_length}\n')
-            f.write(f'Lead-in Angle = {self.lead_angle}\n')
-            f.write(f'Lead-in Type = {self.lead_type}\n')
-            f.write(f'Small Hole Diameter = {self.small_hole}\n')
-            f.write(f'Arc Flattening Distance = {self.flattening_distance}\n')
-            f.write(f'Gap Tolerance = {self.gap_tolerance}\n')
+            f.write(f'Units = {self.D2P.units}\n')
+            f.write(f'Precision = {self.D2P.precision}\n')
+            f.write(f'Lead-in Length = {self.D2P.lead_length}\n')
+            f.write(f'Lead-in Angle = {self.D2P.lead_angle}\n')
+            f.write(f'Lead-in Type = {self.D2P.lead_type}\n')
+            f.write(f'Small Hole Diameter = {self.D2P.small_hole}\n')
+            f.write(f'Arc Flattening Distance = {self.D2P.flattening_distance}\n')
+            f.write(f'Gap Tolerance = {self.D2P.gap_tolerance}\n')
             f.write(f'Canvas Back = {self.canvas_color}\n')
             f.write(f'Rapid Move = {self.rapid_color}\n')
             f.write(f'Internal Cut = {self.cut_color_internal}\n')
