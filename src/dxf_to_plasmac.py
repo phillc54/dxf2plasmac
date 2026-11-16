@@ -1,4 +1,5 @@
 import math
+import pickle
 from datetime import datetime
 from pathlib import Path
 from typing import cast
@@ -19,7 +20,6 @@ epsilon = 1e-6
 join_style = BufferJoinStyle.round # round, mitre, or bevel
 
 class dxf2PlasmaC:
-    # def __init__(self, master):
     def __init__(self):
         self.paths = {}
         self.shape_points = {}
@@ -28,6 +28,7 @@ class dxf2PlasmaC:
         self.layers = []
         self.ignored = []
         self.dxf_file = ''
+        self.loaded_file = ''
         self.units = 'metric'
         self.lead_type = 'line'
         self.lead_length = 3.0
@@ -38,14 +39,88 @@ class dxf2PlasmaC:
         self.precision = 2
         self.small_hole = 0
         self.doc = ''
-        self.error = None
+        self.error = ''
+        self.warnings = []
         self.size = (0.0, 0.0)
         self.material = {}
         self.kerf = 1.0
 
+    def _reset(self):
+        ''' clear previous file state before loading a new dxf '''
+        self.doc = None
+        self.layers = []
+        self.paths = {}
+        self.sequences = {}
+        self.size = (0.0, 0.0)
+        self.error = ''
+        self.dxf_file = ''
+        self.loaded_file = ''
+        self.ignored = []
+        self.warnings = ''
+
+    def _open_doc(self, dxf_file):
+        ''' open a dxf file '''
+        try:
+            self.doc = readfile(dxf_file)
+        except OSError:
+            self.error = 'Not a DXF file or a generic I/O error.'
+        except DXFStructureError:
+            self.error = 'Invalid or corrupted DXF file.'
+        except DXFError as e:
+            self.error = f'\n{e}\nWhile attempting to open dxf_file\n'
+
+    def reload_file(self):
+        print('D2P.reload_file',self.loaded_file,self.dxf_file)
+        ''' reload the current file or project '''
+        if self.loaded_file and self.dxf_file:
+            self.open_dxf(self.dxf_file)
+            print('reloaded', self.dxf_file)
+        elif self.loaded_file and not self.dxf_file:
+            self.open_project(self.loaded_file)
+            print('reloaded', self.loaded_file)
+
+    def open_dxf(self, file):
+        # self.dxf_file = file
+        # self.loaded_file = file
+        # self.ignored = []
+        # self.error = ''
+        self._reset()
+        self.dxf_file = file
+        self.loaded_file = file
+        # to_paths = ToPaths(self.units, self.lead_type, self.lead_length, self.lead_angle, self.flattening_distance, self.gap_tolerance)
+        # self.doc, self.layers, self.paths, self.sequences, self.size, error = to_paths.get_paths(self.D2P.dxf_file)
+        self.get_paths(file)
+        if not self.error:
+            self.get_points('shape') #self.D2P.shape_points = self.get_points('shape')
+            self.get_points('cut') #self.D2P.cut_points = self.get_points('cut')
+
+    def open_project(self, file):
+        with open(file, 'rb') as f:
+            self.doc = pickle.load(f)
+            self.paths = pickle.load(f)
+            self.cut_points = pickle.load(f)
+            self.shape_points = pickle.load(f)
+            self.sequences = pickle.load(f)
+            self.ignored = pickle.load(f)
+            self.layers = pickle.load(f)
+        self.dxf_file = ''
+        self.loaded_file = file
+        self.last_cut = (0.0, 0.0)
+
+    def save_project(self):
+        with open(file, 'wb') as f:
+            pickle.dump(self.D2P.doc, f)
+            pickle.dump(self.D2P.paths, f)
+            pickle.dump(self.D2P.cut_points, f)
+            pickle.dump(self.D2P.shape_points, f)
+            pickle.dump(self.D2P.sequences, f)
+            pickle.dump(self.D2P.ignored, f)
+            pickle.dump(self.D2P.layers, f)
+
+# path gathering ##############################################################
     def get_paths(self, dxf_file: str):
         ''' load a dxf file, convert entities to paths, and build cut sequences '''
-        self._reset()
+        # self._reset()
         self._open_doc(dxf_file)
         if self.doc and not self.error:
             self.layers = [
@@ -74,26 +149,6 @@ class dxf2PlasmaC:
                     }
             self._set_external_paths()
         # return self.doc, self.layers, self.paths, self.sequences, self.size, self.error
-
-    def _reset(self):
-        ''' clear previous file state before loading a new dxf '''
-        self.doc = None
-        self.layers = []
-        self.paths = {}
-        self.sequences = {}
-        self.size = (0.0, 0.0)
-        self.error = None
-
-    def _open_doc(self, dxf_file):
-        ''' open a dxf file '''
-        try:
-            self.doc = readfile(dxf_file)
-        except OSError:
-            self.error = 'Not a DXF file or a generic I/O error.'
-        except DXFStructureError:
-            self.error = 'Invalid or corrupted DXF file.'
-        except DXFError as e:
-            self.error = f'\n{e}\nWhile attempting to open dxf_file\n'
 
     def _dxf_to_paths(self):
         ''' scale geometry, centre at origin, and chain entities into paths '''
@@ -218,380 +273,19 @@ class dxf2PlasmaC:
                 self.sequences[layer]['external'][cut] = True
 
 
-# class ToPoints:
-#     def __init__(self, paths: dict[str, Any], layers: list[str], sequences: dict[str, Any],
-#                  kerf: float, precision: int, small_hole: float, last_cut: tuple[float, float],
-#                  lead_angle: float, flattening_distance: float):
-#         self.paths = paths
-#         self.layers = layers
-#         self.sequences = sequences
-#         self.kerf = kerf
-#         self.precision = precision
-#         self.small_hole = small_hole
-#         self.last_cut = last_cut
-#         self.lead_angle = lead_angle
-#         self.flattening_distance = flattening_distance
-#
-#     def toggle_side(self, master, layer, cut):
-#         print('toggle_side', layer, cut, self.sequences[layer]['start'][cut])
-#         self.sequences[layer]['external'][cut] = not self.sequences[layer]['external'][cut]
-#         self.sequences[layer]['start'][cut] = 0
-#         self.sequences[layer]['lead-in'][cut]['type'] = master.lead_type
-#         # print(f'master.lead_type = {master.lead_type}')
-#         # master.cut_points = self.get_points('cut')
-#
-#     def toggle_lead(self, master, layer, cut):
-#         self.sequences[layer]['start'][cut] = 0
-#         if self.sequences[layer]['lead-in'][cut]['type'] == 'line':
-#             self.sequences[layer]['lead-in'][cut]['type'] = 'arc'
-#         else:
-#             self.sequences[layer]['lead-in'][cut]['type'] = 'line'
-#
-#     def get_points(self, mode: str):
-#         cut = mode == 'cut'
-#         points = {}
-#         last_cut = (0.0, 0.0)
-#         warnings = []
-#         for layer in self.layers:
-#             points[layer] = {}
-#             for n in self.sequences[layer]['cut']:
-#                 points[layer][n], last_cut, warnings_in = self._path_to_points(cut, self.paths[layer][n], layer, n, last_cut)
-#                 warnings.extend(warnings_in)
-#         # return points, warnings
-#         # if mode == 'cut':
-#         #     self.cut_points = points
-#         # else:
-#         #     self.shape_points = points
-#         # print(f'points: {points}')
-#         return points, warnings
-#
-#     def _path_to_points(self, cut, path, layer, path_num, last_cut):
-#         external_cut = self.sequences[layer]['external'][path_num]
-#         offset = float(self.kerf) / 2 if external_cut else float(self.kerf) / -2
-#         l_length = self.sequences[layer]['lead-in'][path_num]['length']
-#         l_angle = self.sequences[layer]['lead-in'][path_num]['angle']
-#         arc_lead = self.sequences[layer]['lead-in'][path_num]['type'] == 'arc'
-#         points_dict = {}
-#         warnings = []
-#         # circles
-#         if isinstance(path, dict):
-#             # circle center point
-#             xc = round(path['cp'][0], self.precision)
-#             yc = round(path['cp'][1], self.precision)
-#             # cut path
-#             if cut:
-#                     # base angle for lead-ins
-#                 ang = self.sequences[layer]['start'][path_num]
-#                 # set radius to cut path rather than shape
-#                 r = round(path['r'], self.precision) + offset
-#                 # lead-in cannot be greater than radius
-#                 ll = min(l_length, r)
-#                 # external is clockwise
-#                 g = 2 if external_cut else 3
-#                 lg = 3
-#                 # circle start point
-#                 xs = xc + r * math.cos(math.radians(ang))
-#                 ys = yc + r * math.sin(math.radians(ang))
-#                 # small internal hole
-#                 if r < self.small_hole / 2 and not external_cut:
-#                     # leadin start
-#                     xl = xs - ll * math.cos(math.radians(ang))
-#                     yl = ys - ll * math.sin(math.radians(ang))
-#                     # write points
-#                     points_dict[0] = {'seg': 0, 'start': last_cut, 'end': (xl, yl)}
-#                     points_dict[1] = {'seg': 1, 'start': (xl, yl), 'end': (xs, ys)}
-#                     points_dict[2] = {'seg': 2, 'start': (xs, ys), 'end': (xs, ys), 'cp': (xc, yc), 'r': r, 'g': g}
-#                     self.sequences[layer]['lead-in'][path_num]['type'] = 'line'
-#                 else:
-#                     # get radius for correct lead-in length
-#                     lr = 2 * ll / math.pi
-#                     # angle from circle center to arc lead-in center
-#                     lead_center_angle = ang if external_cut else 180 + ang
-#                     # angle from arc lead-in center to arc lead-in start
-#                     lead_start_angle = 90 + ang if external_cut else 270 + ang
-#                     # lead-in center point
-#                     lead_cp_x = xs + lr * math.cos(math.radians(lead_center_angle))
-#                     lead_cp_y = ys + lr  * math.sin(math.radians(lead_center_angle))
-#                     if arc_lead:
-#                         # leadin start point
-#                         lead_start_x = lead_cp_x + lr * math.cos(math.radians(lead_start_angle))
-#                         lead_start_y = lead_cp_y + lr  * math.sin(math.radians(lead_start_angle))
-#                     else:
-#                         # angle from circle start to line lead-in start
-#                         a = 90 + ang - l_angle if external_cut else 270 + ang - l_angle
-#                         # lead-in start point
-#                         lead_start_x = xs + l_length * math.cos(math.radians(a))
-#                         lead_start_y = ys + l_length * math.sin(math.radians(a))
-#                     # write points
-#                     points_dict[0] = {'seg': 0, 'start': last_cut, 'end': (lead_start_x, lead_start_y)}
-#                     points_dict[1] = {'seg': 1, 'start': (lead_start_x, lead_start_y), 'end': (xs, ys)}
-#                     if arc_lead:
-#                         arc_data = {'cp': (lead_cp_x, lead_cp_y), 'r': lr, 'sa': lead_start_angle, 'e': 90, 'g': lg}
-#                         points_dict[1].update(arc_data)
-#                     points_dict[2] = {'seg': 2, 'start': (xs, ys), 'end': (xs, ys), 'cp': (xc, yc), 'r': r, 'g': g}
-#             # shape path
-#             else:
-#                 r = path['r']
-#                 # write points
-#                 points_dict[0] = {'seg': 0}
-#                 points_dict[1] = {'seg': 1}
-#                 points_dict[2] = {'seg': 2, 'start': (xc + r, yc), 'end': (xc + r, yc), 'cp': (xc, yc), 'r': r}
-#         # lines
-#         else:
-#             # these are to keep pyright quiet
-#             lxc, lyc, lsa, lr = 0.0, 0.0, 0.0, 0.0
-#             # create list of vertexes
-#             vertices = list(path.flattening(distance=self.flattening_distance))
-#             # offset every vertex and set cut direction if this is a closed cut
-#             if cut and path.is_closed:
-#                 poly = Polygon(vertices).buffer(0)
-#                 offset_poly = cast(Polygon | MultiPolygon, poly.buffer(offset, join_style=join_style))
-#                 if offset_poly.is_empty:
-#                     warnings.append(f'Shape {path_num} is too constricted to offset')
-#                     return None
-#                 # cater for Polygon or MultPolygon if shape squeezed enough to break into parts
-#                 polys = [offset_poly] if isinstance(offset_poly, Polygon) else list(offset_poly.geoms)# type: ignore
-#                 for p in polys:
-#                     vertices = list(p.exterior.coords)
-#             # set counter clockwise and internal as the default
-#             if not external_cut:
-#                 vertices.reverse()
-#             # create list of segments, empty points at 0 and 1 to account for rapid and lead-in
-#             segments = [[], []]
-#             for n, v in enumerate(vertices):
-#                 if n < len(vertices) - 1:
-#                     segments.append([v, vertices[n + 1]])
-#             seg_list = list(range(len(segments)))
-#             s_list = []
-#             if cut:
-#                 idx = self.sequences[layer]['start'][path_num]
-#                 print(f'idx = {idx}')
-#                 self.sequences[layer]['lead-in'][path_num]['valid'] = True
-#                 if idx==0:
-#                     default = True # use default start segment
-#                     idx=2
-#                 else:
-#                     default = False # use custom start segment
-#                 s1 = seg_list[:2] # first two are rapid and lead-in
-#                 s2 = seg_list[idx:] # from index to end
-#                 s3 = seg_list[2:idx] # from beginning to index
-#                 s_list = s1 + s2 + s3
-#                 if path.is_closed:
-#                     # these are to keep pyright quiet
-#                     xs, ys, xm, ym, lxs, lys = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
-#                     # radius for arc leadin
-#                     lr = 2 * l_length / math.pi
-#                     # offset for line leadin
-#                     ll = l_length * math.sin(math.radians(self.lead_angle))
-#                     # base offset distance
-#                     offset = lr if arc_lead else ll
-#                     # loop until leadin fits
-#                     while 1:
-#                         # segment start point
-#                         xs = segments[idx][0][0]
-#                         ys = segments[idx][0][1]
-#                         # segment end point
-#                         xe = segments[idx][1][0]
-#                         ye = segments[idx][1][1]
-#                         # segment mid point
-#                         xm = (xs + xe) / 2
-#                         ym = (ys + ye) / 2
-#                         # segment angle
-#                         ang = math.atan2(ye - ys, xe - xs)
-#                         # get lead-in points
-#                         if arc_lead:
-#                             # lead-in center
-#                             lxc = xm + lr * math.cos(ang+math.radians(90))
-#                             lyc = ym + lr * math.sin(ang+math.radians(90))
-#                             # lead-in start
-#                             lxs = lxc - lr * math.cos(ang)
-#                             lys = lyc - lr * math.sin(ang)
-#                             # lead-in start angle
-#                             lsa = math.degrees(math.atan2(lys-lyc, lxs-lxc))
-#                         else:
-#                             # lead-in start
-#                             lxs = xm + l_length * math.cos(ang+math.radians(180 - l_angle))
-#                             lys = ym + l_length * math.sin(ang+math.radians(180 - l_angle))
-#                         # attempt to ensure the lead-in start is:
-#                         #   inside the cut for an internal cut
-#                         #   outside the cut for an external cut
-#                         if default:
-#                             poly = Polygon(vertices)
-#                             o = offset * 0.95 if external_cut else offset * -0.95
-#                             leadin_poly: Polygon | MultiPolygon = poly.buffer(o, join_style=join_style)
-#                             side = -1 if external_cut else 1
-#                             valid = False
-#                             # some small shapes may be split
-#                             # if leadin_poly.geom_type == 'MultiPolygon':
-#                             if isinstance(leadin_poly, MultiPolygon):
-#                                 polys = [geom for geom in leadin_poly.geoms]
-#                             else:
-#                                 polys = [leadin_poly]
-#                             for poly in polys:
-#                                 # check leadin start distance from cut
-#                                 leadins_poly = [Vec2(x, y) for x, y in poly.exterior.coords]
-#                                 if is_point_in_polygon_2d(Vec2(lxs, lys), leadins_poly) == side:
-#                                     self.sequences[layer]['start'][path_num] = idx
-#                                     valid = True
-#                                     break
-#                             # valid lead-in so complete the cut
-#                             if valid:
-#                                 break
-#                             idx += 1
-#                             # this run didn't work
-#                             if idx == len(segments):
-#                                 # less than kerf away so fail
-#                                 if offset - float(self.kerf) < epsilon:
-#                                     warnings.append(f'Could not find valid lead-in for cut {path_num}')
-#                                     self.sequences[layer]['lead-in'][path_num]['valid'] = False
-#                                     idx = 2
-#                                     self.sequences[layer]['start'][path_num] = idx
-#                                     break
-#                                 # decrease the test distance and go again
-#                                 else:
-#                                     offset -= float(self.kerf)
-#                                     offset = max(offset, float(self.kerf))
-#                                     idx = 2
-#                         else:
-#                             break
-#                     segments[0] = [last_cut, (lxs, lys)]
-#                     segments[1] = [(lxs, lys), (xm, ym)]
-#                     segments[idx][0] = (xm, ym)
-#                     segments.append([(xs, ys), (xm, ym)])
-#                     s_list.append(len(s_list))
-#                 else:
-#                     segments[0] = [last_cut, (segments[2][0][0], segments[2][0][1])]
-#             # add line points to the points dict
-#             lst = s_list if cut else seg_list
-#             for n, s in enumerate(lst):
-#                 if segments[s]:
-#                     points_dict[n] = {'seg': s,
-#                                         'start': (round(segments[s][0][0], self.precision), round(segments[s][0][1], self.precision)),
-#                                         'end': (round(segments[s][1][0], self.precision), round(segments[s][1][1], self.precision))}
-#                     if cut and s == 1 and arc_lead:
-#                         points_dict[n]['cp'] = (round(lxc, self.precision), round(lyc, self.precision))
-#                         points_dict[n]['r'] = round(lr, self.precision)
-#                         points_dict[n]['sa'] = round(lsa, self.precision)
-#                         points_dict[n]['e'] = 90.0
-#                         points_dict[n]['g'] = 3
-#                 else:
-#                     points_dict[n] = {'seg': s}
-#         last_cut = points_dict[len(points_dict)-1]['end']
-#         last_cut = (round(last_cut[0], self.precision),
-#                             round(last_cut[1], self.precision))
-#         return points_dict, last_cut, warnings
-#
-#
-# class ToGcode:
-#     def __init__(self, points: dict[str, Any], layers: list[str],
-#                  sequences: dict[str, Any], ignored: list[str],
-#                  precision: float):
-#         self.points = points
-#         self.layers = layers
-#         self.sequences = sequences
-#         self.ignored = ignored
-#         self.precision = precision
-
-    def write_gcode(self, gcode_file: str):
-        unit = 'G21 ; units in millimeters' if units == 'metric' else 'G20 ; units in inches'
-        blend = 0.1 if units == 'metric' else 0.004
-        amble = (f'{unit}\n'
-                    'G40 ; cancel cutter compensation\n'
-                    'G49 ; cancel tool compensation\n'
-                    f'G64 P{blend} ; path blending tolerance\n'
-                    'G80 ; cancel canned cycle\n'
-                    'G90 ; absolute positioning\n'
-                    'G92.1 ; cancel G92 offsets\n'
-                    'G94 ; feed rate = units per minute\n'
-                    'G97 ; spindle mode = rpm')
-        gcode = [f'; {Path(gcode_file).name} by dxf2PlasmaC',
-                    f'; {str(datetime.now()).rsplit(':', 1)[0]}',
-                    '',
-                    '; configure a temporary material',
-                    f'(o=0, nu={self.material['nu']}, na={self.material['na']}, ph={self.material['ph']}, pd={self.material['pd']}, ch={self.material['ch']}, fr={self.material['fr']}, kw={self.material['kw']})',
-                    '',
-                    '#<h_velocity> = 60 ; small hole velocity = 60%',
-                    f'#<h_diameter> = {small_hole} ; small hole diameter',
-                    '#<holes> = 1 ; reduce velocity  for small holes',
-                    '',
-                    f'{amble}',
-                    '',
-                    'F#<_hal[plasmac.cut-feed-rate]> ; set feed rate']
-        for layer in self.layers:
-            if layer not in self.ignored:
-                for n, point in enumerate(self.sequences[layer]['cut']):
-                    gcode.append(f'\n;layer {layer}, cut #{n + 1}')
-                    gcode.extend(self._gcode_from_points(self.points[layer][point], layer, point))
-        gcode.append(f'\n{amble}\nM30')
-        with open(gcode_file, 'w') as f:
-            _ = f.write('\n'.join(gcode))
-
-    def _gcode_from_points(self, points, layer, point):
-        code = []
-        # make a segment list in cut order, circles are three segments only
-        raw = [p for p in points]
-        if len(raw) > 3:
-            s1 = raw[:2] # first two are rapid and lead-in
-            s2 = raw[self.sequences[layer]['start'][point]:-1] # from cut start to second last point
-            s3 = raw[2:self.sequences[layer]['start'][point]] # from beginning to cut start
-            s4 = [raw[-1]] # last point
-            segments = s1 + s2 + s3 + s4
-        else:
-            segments = raw
-        # iterate through the segments
-        for s in segments:
-            if 'start' not in points[s]:
-                continue
-            # circles
-            if 'cp' in points[s]:
-                i = points[s]['cp'][0] - points[s]['start'][0]
-                j = points[s]['cp'][1] - points[s]['start'][1]
-                code.append(f'G0{points[s]['g']}' +
-                            f' X{points[s]['end'][0]:.{self.precision}f}' +
-                            f' Y{points[s]['end'][1]:.{self.precision}f}' +
-                            f' I{i:.{self.precision}f}' +
-                            f' J{j:.{self.precision}f}')
-            # lines
-            else:
-                cmd = 'G00' if s == 0 else 'G01'
-                code.append(f'{cmd}' +
-                            f' X{points[s]['end'][0]:.{self.precision}f}' +
-                            f' Y{points[s]['end'][1]:.{self.precision}f}')
-            if s == 0:
-                code.append('M03')
-        code.append('M05')
-        return code
-
-
-
-
-
-# class ToPoints:
-#     def __init__(self, master):
-#         self.master = master
-#         # self.paths = master.paths
-#         # self.layers = master.layers
-#         # self.sequences = master.sequences
-#         # self.kerf = master.kerf
-#         # self.precision = master.precision
-#         # self.small_hole = master.small_hole
-#         # self.last_cut = master.last_cut
-#         # self.lead_type = master.lead_type
-#         # self.lead_angle = master.lead_angle
-#         # self.flattening_distance = master.flattening_distance
-
+# point gathering #############################################################
     def toggle_side(self, layer, cut):
-        print('toggle_side', layer, cut, self.sequences[layer]['start'][cut])
+        # print('toggle_side', layer, cut, self.sequences[layer]['start'][cut])
         self.sequences[layer]['external'][cut] = not self.sequences[layer]['external'][cut]
         self.sequences[layer]['start'][cut] = 0
         self.sequences[layer]['lead-in'][cut]['type'] = self.lead_type
-        print(f'self.lead_type = {self.lead_type}')
+        # print(f'self.lead_type = {self.lead_type}')
 
 
         # self.cut_points = self.get_points('cut')
-        bob, _ = self.get_points('cut')
-        print('bob', type(bob))
-        self.cut_points = bob
+        self.get_points('cut') #bob, _ = self.get_points('cut')
+        # print('bob', type(bob))
+        # self.cut_points = bob
 
     def toggle_lead(self,  layer, cut):
         self.sequences[layer]['start'][cut] = 0
@@ -604,22 +298,22 @@ class dxf2PlasmaC:
         cut = mode == 'cut'
         points = {}
         last_cut = (0.0, 0.0)
-        warnings = []
+        self.warnings = []
         for layer in self.layers:
             points[layer] = {}
             for n in self.sequences[layer]['cut']:
                 points[layer][n], last_cut, warnings_in = self._path_to_points(cut, self.paths[layer][n], layer, n, last_cut)
-                warnings.extend(warnings_in)
-                print('points[layer][n]',type(points[layer][n]))
-            print('points[layer]',type(points[layer]))
-        print('points', type(points))
-        # return points, warnings
-        # if mode == 'cut':
-        #     self.cut_points = points
-        # else:
-        #     self.shape_points = points
+                self.warnings.extend(warnings_in)
+                # print('points[layer][n]',type(points[layer][n]))
+            # print('points[layer]',type(points[layer]))
+        # print('points', type(points))
+        # return points, self.warnings
+        if cut:
+            self.cut_points = points
+        else:
+            self.shape_points = points
         # print(f'points: {points}')
-        return points, warnings
+        # return points, self.warnings
 
     def _path_to_points(self, cut, path, layer, path_num, last_cut):
         external_cut = self.sequences[layer]['external'][path_num]
@@ -721,7 +415,7 @@ class dxf2PlasmaC:
             s_list = []
             if cut:
                 idx = self.sequences[layer]['start'][path_num]
-                print(f'idx = {idx}')
+                # print(f'idx = {idx}')
                 self.sequences[layer]['lead-in'][path_num]['valid'] = True
                 if idx==0:
                     default = True # use default start segment
@@ -836,3 +530,75 @@ class dxf2PlasmaC:
         last_cut = (round(last_cut[0], self.precision),
                             round(last_cut[1], self.precision))
         return points_dict, last_cut, warnings
+
+
+# gcode stuff #################################################################
+    def write_gcode(self, gcode_file: str):
+        unit = 'G21 ; units in millimeters' if units == 'metric' else 'G20 ; units in inches'
+        blend = 0.1 if units == 'metric' else 0.004
+        amble = (f'{unit}\n'
+                    'G40 ; cancel cutter compensation\n'
+                    'G49 ; cancel tool compensation\n'
+                    f'G64 P{blend} ; path blending tolerance\n'
+                    'G80 ; cancel canned cycle\n'
+                    'G90 ; absolute positioning\n'
+                    'G92.1 ; cancel G92 offsets\n'
+                    'G94 ; feed rate = units per minute\n'
+                    'G97 ; spindle mode = rpm')
+        gcode = [f'; {Path(gcode_file).name} by dxf2PlasmaC',
+                    f'; {str(datetime.now()).rsplit(':', 1)[0]}',
+                    '',
+                    '; configure a temporary material',
+                    f'(o=0, nu={self.material['nu']}, na={self.material['na']}, ph={self.material['ph']}, pd={self.material['pd']}, ch={self.material['ch']}, fr={self.material['fr']}, kw={self.material['kw']})',
+                    '',
+                    '#<h_velocity> = 60 ; small hole velocity = 60%',
+                    f'#<h_diameter> = {small_hole} ; small hole diameter',
+                    '#<holes> = 1 ; reduce velocity  for small holes',
+                    '',
+                    f'{amble}',
+                    '',
+                    'F#<_hal[plasmac.cut-feed-rate]> ; set feed rate']
+        for layer in self.layers:
+            if layer not in self.ignored:
+                for n, point in enumerate(self.sequences[layer]['cut']):
+                    gcode.append(f'\n;layer {layer}, cut #{n + 1}')
+                    gcode.extend(self._gcode_from_points(self.points[layer][point], layer, point))
+        gcode.append(f'\n{amble}\nM30')
+        with open(gcode_file, 'w') as f:
+            _ = f.write('\n'.join(gcode))
+
+    def _gcode_from_points(self, points, layer, point):
+        code = []
+        # make a segment list in cut order, circles are three segments only
+        raw = [p for p in points]
+        if len(raw) > 3:
+            s1 = raw[:2] # first two are rapid and lead-in
+            s2 = raw[self.sequences[layer]['start'][point]:-1] # from cut start to second last point
+            s3 = raw[2:self.sequences[layer]['start'][point]] # from beginning to cut start
+            s4 = [raw[-1]] # last point
+            segments = s1 + s2 + s3 + s4
+        else:
+            segments = raw
+        # iterate through the segments
+        for s in segments:
+            if 'start' not in points[s]:
+                continue
+            # circles
+            if 'cp' in points[s]:
+                i = points[s]['cp'][0] - points[s]['start'][0]
+                j = points[s]['cp'][1] - points[s]['start'][1]
+                code.append(f'G0{points[s]['g']}' +
+                            f' X{points[s]['end'][0]:.{self.precision}f}' +
+                            f' Y{points[s]['end'][1]:.{self.precision}f}' +
+                            f' I{i:.{self.precision}f}' +
+                            f' J{j:.{self.precision}f}')
+            # lines
+            else:
+                cmd = 'G00' if s == 0 else 'G01'
+                code.append(f'{cmd}' +
+                            f' X{points[s]['end'][0]:.{self.precision}f}' +
+                            f' Y{points[s]['end'][1]:.{self.precision}f}')
+            if s == 0:
+                code.append('M03')
+        code.append('M05')
+        return code

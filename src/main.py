@@ -5,7 +5,6 @@
 
 import math
 import os
-import pickle
 import sys
 from pathlib import Path
 from tkinter import Canvas
@@ -73,28 +72,7 @@ class App(CTk.CTk):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        # for the dxf_to_plasmac library
-        # self.paths = {}
-        # self.shape_points = {}
-        # self.cut_points = {}
-        # self.sequences = {}
-        # self.layers = []
-        # self.ignored = []
-        # self.dxf_file = ''
-        # self.units = 'metric'
-        # self.lead_type = 'line'
-        # self.lead_length = 3.3
-        # self.last_cut = (0.0, 0.0)
-        # self.flattening_distance = 0.025
-        # self.gap_tolerance = 0.001
-        # self.lead_angle = 45
-        # self.precision = 2
-        # self.small_hole = 0
-        # self.doc = ''
-        # self.to_points = ''
-
         self.D2P = dxf2PlasmaC()
-
         # color preferences
         self.canvas_color = ''
         self.rapid_color = ''
@@ -136,7 +114,7 @@ class App(CTk.CTk):
         self.canvas_last = {'scale': 1.0, 'x': 0.0, 'y': 0.0}
         self.canvas_first = {'x': 0.0, 'y': 0.0}
         self.new_file = False
-        self.loaded_file = ''
+        self.D2P.loaded_file = ''
         self.selected_item = ''
         self.mouse = (0, 0)
         self.gcode_file = ''
@@ -154,7 +132,6 @@ class App(CTk.CTk):
         self.set_preferences()
 
     def do_plot(self):
-        # print('self.D2P.shape_points:', self.D2P.shape_points)
         self.plot(self.D2P.shape_points, clear=True)
         self.plot(self.D2P.cut_points, mode='cut', clear=False)
         self.update()
@@ -162,8 +139,8 @@ class App(CTk.CTk):
             if self.new_file:
                 self.zoom_all()
                 self.new_file = False
-#FIXME first zoom doesn't hold very well ???
-                self.zoom_all()
+#FIXME first zoom doesn't hold very well ??? after
+                self.after(100, self.zoom_all())
             else:
                 self.canvas.scale('all', 0, 0, self.canvas_last['scale'], self.canvas_last['scale'])
                 self.canvas.move('all', self.canvas_last['x'], self.canvas_last['y'])
@@ -184,13 +161,10 @@ class App(CTk.CTk):
             self.canvas.create_arc(-spot, -spot, spot, spot, start=180, extent=90, fill='black', outline='black', state='disabled')
             self.canvas.create_arc(-spot, -spot, spot, spot, start=270, extent=90, fill='white', outline='black', state='disabled')
         # iterate through points
-        print(type(points))
         for layer in self.D2P.layers:
             if layer in self.D2P.ignored:
                 continue
             for point in self.D2P.sequences[layer]['cut']:
-                print(f'M:{mode}   L:{layer}={type(layer)}   P:{point}={type(point)}')
-                # print(points[layer])
                  # shape was too small to offset
                 if not points[layer][point]:
                     seq += 1
@@ -264,6 +238,7 @@ class App(CTk.CTk):
             check.configure(command=lambda c=check, l=f'layer_{layer}': self.toggle_layer(l, c))
             check.pack(padx=4, pady=(0, 4), expand=True, fill='x', anchor='w')
 
+#FIXME - move som of this to D2P
     def show_option_popup(self, event):
         ''' display the context menu at the mouse cursor position '''
         if self.selected_item:
@@ -314,7 +289,7 @@ class App(CTk.CTk):
                     #     self.D2P.sequences[layer]['lead-in'][cut]['type'] = 'arc'
                     # else:
                     #     self.D2P.sequences[layer]['lead-in'][cut]['type'] = 'line'
-                    self.D2P.cut_points = self.get_points('cut')
+                    self.get_points('cut') #self.D2P.cut_points = self.get_points('cut')
                     self.do_plot()
                 case 'Change Length':
                     self.color_selected(self.canvas.type(self.selected_item), False)
@@ -336,7 +311,7 @@ class App(CTk.CTk):
                     # self.D2P.sequences[layer]['external'][cut] = not self.D2P.sequences[layer]['external'][cut]
                     # self.D2P.sequences[layer]['start'][cut] = 0
                     # self.D2P.sequences[layer]['lead-in'][cut]['type'] = self.D2P.lead_type
-                    # self.D2P.cut_points = self.get_points('cut')
+                    # self.get_points('cut') #self.D2P.cut_points = self.get_points('cut')
 
 
                     self.do_plot()
@@ -351,7 +326,7 @@ class App(CTk.CTk):
                     self.selected_item = ''
                     self.D2P.last_cut = (0.0, 0.0)
                     self.D2P.sequences[layer]['start'][cut] = segment
-                    self.D2P.cut_points = self.get_points('cut')
+                    self.get_points('cut') #self.D2P.cut_points = self.get_points('cut')
                     self.do_plot()
                 case 'Change Start Angle':
                     self.color_selected(self.canvas.type(self.selected_item), False)
@@ -377,7 +352,7 @@ class App(CTk.CTk):
         if new_seq is not None and new_seq != seq + 1:
             self.D2P.sequences[layer]['cut'].remove(cut)
             self.D2P.sequences[layer]['cut'].insert(new_seq - 1, cut)
-            self.D2P.cut_points = self.get_points('cut')
+            self.get_points('cut') #self.D2P.cut_points = self.get_points('cut')
             self.do_plot()
 
     def change_start_angle(self, cut, seq, layer):
@@ -391,7 +366,7 @@ class App(CTk.CTk):
                              parent=self)
         if ang is not None and ang != seq + 1:
             self.D2P.sequences[layer]['start'][cut] = ang
-            self.D2P.cut_points = self.get_points('cut')
+            self.get_points('cut') #self.D2P.cut_points = self.get_points('cut')
             self.do_plot()
 
     def lead_in_length(self, cut, radius, external_cut, layer):
@@ -404,7 +379,7 @@ class App(CTk.CTk):
                              parent=self)
         if length is not None:
             self.D2P.sequences[layer]['lead-in'][cut]['length'] = length
-            self.D2P.cut_points = self.get_points('cut')
+            self.get_points('cut') #self.D2P.cut_points = self.get_points('cut')
             self.do_plot()
 
     def lead_in_angle(self, cut, layer):
@@ -416,7 +391,7 @@ class App(CTk.CTk):
                              parent=self)
         if angle is not None:
             self.D2P.sequences[layer]['lead-in'][cut]['angle'] = angle
-            self.D2P.cut_points = self.get_points('cut')
+            self.get_points('cut') #self.D2P.cut_points = self.get_points('cut')
             self.do_plot()
 
     def zoom_in(self, _event):
@@ -585,56 +560,72 @@ class App(CTk.CTk):
                 self.canvas.itemconfig(self.selected_item, outline=color)
 
     def reload(self, _event):
-        ''' reload the current file or project '''
-        if self.loaded_file and not self.D2P.dxf_file:
-            self.load_project(f'{self.current_path}/{self.loaded_file}.d2p')
-        elif self.loaded_file and self.D2P.dxf_file:
-            self.load_dxf(self.D2P.dxf_file)
+        self.D2P.reload_file()
+        # ''' reload the current file or project '''
+        # if self.D2P.loaded_file and not self.D2P.dxf_file:
+        #     self.load_project(f'{self.current_path}/{self.D2P.loaded_file}.d2p')
+        # elif self.D2P.loaded_file and self.D2P.dxf_file:
+        #     self.load_dxf(self.D2P.dxf_file)
+        if self.D2P.error:
+            title = 'File Open Error'
+            Msg.showerror(self, title, self.D2P.error)
+            return
+        if self.D2P.warnings:
+            title = 'Cut Warnings'
+            message = "\n".join(self.D2P.warnings)
+            Msg.showwarning(self, title, message)
+        self.create_layer_widgets() # need this incase some layers were disabled
+        self.do_plot()
 
     def open_project(self, _event):
         file = Open(parent=self,
                     title='Open Project',
                     filetypes=[('Project File', '*.d2p'), ('Any File', '*.*')],
                     initialdir=self.current_path,
-                    initialfile = self.loaded_file)
+                    initialfile = self.D2P.loaded_file)
         if file:
-            self.load_project(file)
+            self.current_path = str(Path(file).parent)
+            self.title(f'dxf2PlasmaC     project file: {Path(file).name}')
+            self.new_file = True
+            self.selected_item = ''
+            self.D2P.open_project(file)
+            if self.D2P.warnings:
+                title = 'Cut Warnings'
+                message = "\n".join(self.D2P.warnings)
+                Msg.showwarning(self, title, message)
+            self.create_layer_widgets()
+            self.do_plot()
 
-    def load_project(self, file):
-        self.title(f'dxf2PlasmaC     project file: {Path(file).name}')
-        self.current_path = str(Path(file).parent)
-        with open(file, 'rb') as f:
-            self.D2P.doc = pickle.load(f)
-            self.D2P.paths = pickle.load(f)
-            self.D2P.cut_points = pickle.load(f)
-            self.D2P.shape_points = pickle.load(f)
-            self.D2P.sequences = pickle.load(f)
-            self.D2P.ignored = pickle.load(f)
-            self.D2P.layers = pickle.load(f)
-        self.D2P.dxf_file = ''
-        self.loaded_file = str(Path(file).stem)
-        self.new_file = True
-        self.selected_item = ''
-        self.D2P.last_cut = (0.0, 0.0)
-        self.create_layer_widgets()
-        self.do_plot()
+    # def load_project(self, file):
+    #     with open(file, 'rb') as f:
+    #         self.D2P.doc = pickle.load(f)
+    #         self.D2P.paths = pickle.load(f)
+    #         self.D2P.cut_points = pickle.load(f)
+    #         self.D2P.shape_points = pickle.load(f)
+    #         self.D2P.sequences = pickle.load(f)
+    #         self.D2P.ignored = pickle.load(f)
+    #         self.D2P.layers = pickle.load(f)
+    #     self.D2P.dxf_file = ''
+    #     self.D2P.loaded_file = str(Path(file).stem)
+    #     self.D2P.last_cut = (0.0, 0.0)
 
     def save_project(self, _event):
         file = Save(parent=self,
                     title='Save Project',
                     filetypes=[('Project File', '*.d2p'), ('Any File', '*.*')],
                     initialdir=self.current_path,
-                    initialfile = self.loaded_file)
+                    initialfile = self.D2P.loaded_file)
         if file:
             self.current_path = str(Path(file).parent)
-            with open(file, 'wb') as f:
-                pickle.dump(self.D2P.doc, f)
-                pickle.dump(self.D2P.paths, f)
-                pickle.dump(self.D2P.cut_points, f)
-                pickle.dump(self.D2P.shape_points, f)
-                pickle.dump(self.D2P.sequences, f)
-                pickle.dump(self.D2P.ignored, f)
-                pickle.dump(self.D2P.layers, f)
+            self.D2P.save_project()
+            # with open(file, 'wb') as f:
+            #     pickle.dump(self.D2P.doc, f)
+            #     pickle.dump(self.D2P.paths, f)
+            #     pickle.dump(self.D2P.cut_points, f)
+            #     pickle.dump(self.D2P.shape_points, f)
+            #     pickle.dump(self.D2P.sequences, f)
+            #     pickle.dump(self.D2P.ignored, f)
+            #     pickle.dump(self.D2P.layers, f)
 
     def import_dxf(self, _event):
         # self.update()
@@ -644,46 +635,61 @@ class App(CTk.CTk):
                     initialdir=self.current_path)
         # self.update()
         if file:
-            self.load_dxf(file)
+            # self.load_dxf(file)
+            self.title(f'dxf2PlasmaC     dxf file: {Path(file).name}')
+            self.current_path = str(Path(file).parent)
+            self.new_file = True
 
-    def load_dxf(self, file):
-        self.title(f'dxf2PlasmaC     dxf file: {Path(file).name}')
-        self.current_path = str(Path(file).parent)
-        self.D2P.dxf_file = file
-        self.loaded_file = str(Path(file).stem)
-        self.new_file = True
-        self.D2P.ignored = []
-        error = None
-        # to_paths = ToPaths(self.units, self.lead_type, self.lead_length, self.lead_angle, self.flattening_distance, self.gap_tolerance)
-        # self.doc, self.layers, self.paths, self.sequences, self.size, error = to_paths.get_paths(self.D2P.dxf_file)
-        self.D2P.get_paths(self.D2P.dxf_file)
-        if error:
-            title = 'File Open Error'
-            Msg.showerror(self, title, error)
-            return
-        self.create_layer_widgets()
-        post = 'mm' if self.D2P.units == 'metric' else 'in'
-        self.title(f'{self.title()}     Size: {self.size[0]}{post} x {self.size[1]}{post}')
-        self.D2P.shape_points = self.get_points('shape')
-        self.D2P.cut_points = self.get_points('cut')
-        self.do_plot()
+            self.D2P.open_dxf(file)
+            if self.D2P.error:
+                title = 'File Open Error'
+                Msg.showerror(self, title, self.D2P.error)
+                return
+            if self.D2P.warnings:
+                title = 'Cut Warnings'
+                message = "\n".join(self.D2P.warnings)
+                Msg.showwarning(self, title, message)
+
+            self.create_layer_widgets()
+            post = 'mm' if self.D2P.units == 'metric' else 'in'
+            self.title(f'{self.title()}     Size: {self.size[0]}{post} x {self.size[1]}{post}')
+            self.do_plot()
+
+    # def load_dxf(self, file):
+    #     self.D2P.dxf_file = file
+    #     self.D2P.loaded_file = str(Path(file).stem)
+    #     self.D2P.ignored = []
+    #     error = None
+    #     # to_paths = ToPaths(self.units, self.lead_type, self.lead_length, self.lead_angle, self.flattening_distance, self.gap_tolerance)
+    #     # self.doc, self.layers, self.paths, self.sequences, self.size, error = to_paths.get_paths(self.D2P.dxf_file)
+    #     self.D2P.get_paths(self.D2P.dxf_file)
+    #     if error:
+    #         title = 'File Open Error'
+    #         Msg.showerror(self, title, error)
+    #         return
+    #     self.get_points('shape') #self.D2P.shape_points = self.get_points('shape')
+    #     self.get_points('cut') #self.D2P.cut_points = self.get_points('cut')
 
     def get_points(self, mode: str):
         # self.to_points = ToPoints(self.paths, self.layers, self.sequences, self.kerf_var.get(), self.precision, self.small_hole, self.last_cut, self.lead_angle, self.flattening_distance)
         # self.to_points = ToPoints(self)
-        points, warnings = self.D2P.get_points(mode)
-        if warnings:
+        self.D2P.get_points(mode) #points, warnings = self.D2P.get_points(mode)
+        # if warnings:
+        #     title = 'Cut Warnings'
+        #     message = "\n".join(warnings)
+        #     Msg.showwarning(self, title, message)
+        # return points
+        if self.D2P.warnings:
             title = 'Cut Warnings'
-            message = "\n".join(warnings)
+            message = "\n".join(self.D2P.warnings)
             Msg.showwarning(self, title, message)
-        return points
 
     def export_gcode(self, _event):
         file = Save(parent=self,
                     title='Save GCode File',
                     filetypes=[('GCode File', '*.ngc'), ('Any File', '*.*')],
                     initialdir=self.current_path,
-                    initialfile = self.loaded_file)
+                    initialfile = self.D2P.loaded_file)
         if file:
             material = {}
             material['nu'] = self.material_var.get().split(':')[0].strip() if self.material_var.get() else 0
@@ -1031,9 +1037,9 @@ class App(CTk.CTk):
 
 
 
-        if self.loaded_file:
+        if self.D2P.loaded_file:
             self.D2P.last_cut = (0.0, 0.0)
-            self.D2P.cut_points = self.get_points('cut')
+            self.get_points('cut') #self.D2P.cut_points = self.get_points('cut')
             self.do_plot()
 
     def close_prefs(self):
@@ -1117,14 +1123,14 @@ class App(CTk.CTk):
         self.pierce_h_var.set(self.material_dict[num]['PIERCE_HEIGHT'])
         self.pierce_d_var.set(self.material_dict[num]['PIERCE_DELAY'])
         self.cut_h_var.set(self.material_dict[num]['CUT_HEIGHT'])
-        self.D2P.cut_points = self.get_points('cut')
+        self.get_points('cut') #self.D2P.cut_points = self.get_points('cut')
         self.do_plot()
 
     def kerf_changed(self, value):
         ''' kerf width changed so redraw '''
         try:
             _ = float(value)
-            self.D2P.cut_points = self.get_points('cut')
+            self.get_points('cut') #self.D2P.cut_points = self.get_points('cut')
             self.do_plot()
         except ValueError:
             pass
