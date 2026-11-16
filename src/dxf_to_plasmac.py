@@ -44,6 +44,9 @@ class dxf2PlasmaC:
         self.size = (0.0, 0.0)
         self.material = {}
         self.kerf = 1.0
+        self.material = {}
+        self.material_dict = {}
+        self.material_names = []
 
     def _reset(self):
         ''' clear previous file state before loading a new dxf '''
@@ -273,27 +276,43 @@ class dxf2PlasmaC:
                 self.sequences[layer]['external'][cut] = True
 
 
-# point gathering #############################################################
+# changes #####################################################################
     def toggle_side(self, layer, cut):
-        # print('toggle_side', layer, cut, self.sequences[layer]['start'][cut])
         self.sequences[layer]['external'][cut] = not self.sequences[layer]['external'][cut]
         self.sequences[layer]['start'][cut] = 0
         self.sequences[layer]['lead-in'][cut]['type'] = self.lead_type
-        # print(f'self.lead_type = {self.lead_type}')
+        self.get_points('cut')
 
-
-        # self.cut_points = self.get_points('cut')
-        self.get_points('cut') #bob, _ = self.get_points('cut')
-        # print('bob', type(bob))
-        # self.cut_points = bob
-
-    def toggle_lead(self,  layer, cut):
+    def toggle_lead(self, layer, cut):
         self.sequences[layer]['start'][cut] = 0
         if self.sequences[layer]['lead-in'][cut]['type'] == 'line':
             self.sequences[layer]['lead-in'][cut]['type'] = 'arc'
         else:
             self.sequences[layer]['lead-in'][cut]['type'] = 'line'
+        self.get_points('cut')
 
+    def change_lead_in_angle(self, layer, cut, angle):
+        self.sequences[layer]['lead-in'][cut]['angle'] = angle
+        self.get_points('cut')
+
+    def change_lead_in_length(self, layer, cut, length):
+        self.sequences[layer]['lead-in'][cut]['length'] = length
+        self.get_points('cut')
+
+    def change_start_angle(self, layer, cut, angle):
+        self.sequences[layer]['start'][cut] = angle
+        self.get_points('cut')
+
+    def change_cut_sequence(self, layer, cut, sequence):
+        self.sequences[layer]['cut'].remove(cut)
+        self.sequences[layer]['cut'].insert(sequence - 1, cut)
+        self.get_points('cut')
+
+    def change_start_segment(self, layer, cut, segment):
+        self.sequences[layer]['start'][cut] = segment
+        self.get_points('cut')
+
+# point gathering #############################################################
     def get_points(self, mode: str):
         cut = mode == 'cut'
         points = {}
@@ -536,6 +555,13 @@ class dxf2PlasmaC:
     def write_gcode(self, gcode_file: str):
         unit = 'G21 ; units in millimeters' if units == 'metric' else 'G20 ; units in inches'
         blend = 0.1 if units == 'metric' else 0.004
+        nu = self.material['nu']
+        na = self.material['na']
+        ph = self.material['ph']
+        pd = self.material['pd']
+        ch = self.material['ch']
+        fr = self.material['fr']
+        kw = self.material['kw']
         amble = (f'{unit}\n'
                     'G40 ; cancel cutter compensation\n'
                     'G49 ; cancel tool compensation\n'
@@ -549,7 +575,7 @@ class dxf2PlasmaC:
                     f'; {str(datetime.now()).rsplit(':', 1)[0]}',
                     '',
                     '; configure a temporary material',
-                    f'(o=0, nu={self.material['nu']}, na={self.material['na']}, ph={self.material['ph']}, pd={self.material['pd']}, ch={self.material['ch']}, fr={self.material['fr']}, kw={self.material['kw']})',
+                    f'(o=0, nu={nu}, na={na}, ph={ph}, pd={pd}, ch={ch}, fr={fr}, kw={kw})',
                     '',
                     '#<h_velocity> = 60 ; small hole velocity = 60%',
                     f'#<h_diameter> = {small_hole} ; small hole diameter',
@@ -602,3 +628,48 @@ class dxf2PlasmaC:
                 code.append('M03')
         code.append('M05')
         return code
+
+# material handling ###########################################################
+    def load_materials(self, file):
+        try:
+            with open(file, 'r') as f:
+                materials = f.readlines()
+            temp = {}
+            material = 0
+            for line in materials:
+                if line.startswith('[MATERIAL_NUMBER_'):
+                    material = line.rsplit('_', 1)[1].strip().strip(']')
+                    temp[material] = {'NUM': material}
+                elif line.startswith('NAME'):
+                    temp[material]['NAME'] = line.split('=')[1].strip()
+                elif line.startswith('KERF_WIDTH'):
+                    temp[material]['KERF_WIDTH'] = line.split('=')[1].strip()
+                elif line.startswith('THC'):
+                    temp[material]['THC'] = line.split('=')[1].strip()
+                elif line.startswith('PIERCE_HEIGHT'):
+                    temp[material]['PIERCE_HEIGHT'] = line.split('=')[1].strip()
+                elif line.startswith('PIERCE_DELAY'):
+                    temp[material]['PIERCE_DELAY'] = line.split('=')[1].strip()
+                elif line.startswith('PUDDLE_JUMP_HEIGHT'):
+                    temp[material]['PUDDLE_JUMP_HEIGHT'] = line.split('=')[1].strip()
+                elif line.startswith('PUDDLE_JUMP_DELAY'):
+                    temp[material]['PUDDLE_JUMP_DELAY'] = line.split('=')[1].strip()
+                elif line.startswith('CUT_HEIGHT'):
+                    temp[material]['CUT_HEIGHT'] = line.split('=')[1].strip()
+                elif line.startswith('CUT_SPEED'):
+                    temp[material]['CUT_SPEED'] = line.split('=')[1].strip()
+                elif line.startswith('CUT_AMPS'):
+                    temp[material]['CUT_AMPS'] = line.split('=')[1].strip()
+                elif line.startswith('CUT_VOLTS'):
+                    temp[material]['CUT_VOLTS'] = line.split('=')[1].strip()
+                elif line.startswith('PAUSE_AT_END'):
+                    temp[material]['PAUSE_AT_END'] = line.split('=')[1].strip()
+                elif line.startswith('GAS_PRESSURE'):
+                    temp[material]['GAS_PRESSURE'] = line.split('=')[1].strip()
+                elif line.startswith('CUT_MODE'):
+                    temp[material]['CUT_MODE'] = line.split('=')[1].strip()
+            self.material_names = [f'{o}:  {temp[o]['NAME']}' for o in temp]
+            self.material_dict = dict(sorted(temp.items()))
+        except FileNotFoundError:
+            return 'File not found'
+        return None
