@@ -69,9 +69,7 @@ class PopupMenu(CTk.CTkToplevel):
 class App(CTk.CTk):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
         self.D2P = dxf2PlasmaC()
-        print(dir(self.D2P))
         # color preferences
         self.canvas_color = ''
         self.rapid_color = ''
@@ -546,7 +544,7 @@ class App(CTk.CTk):
                     title='Open Project',
                     filetypes=[('Project File', '*.d2p'), ('Any File', '*.*')],
                     initialdir=self.current_path,
-                    initialfile = self.D2P.loaded_file)
+                    initialfile = Path(self.D2P.loaded_file).stem)
         if file:
             self.current_path = str(Path(file).parent)
             self.title(f'dxf2PlasmaC     project file: {Path(file).name}')
@@ -565,7 +563,7 @@ class App(CTk.CTk):
                     title='Save Project',
                     filetypes=[('Project File', '*.d2p'), ('Any File', '*.*')],
                     initialdir=self.current_path,
-                    initialfile = self.D2P.loaded_file)
+                    initialfile = Path(self.D2P.loaded_file).stem)
         if file:
             self.current_path = str(Path(file).parent)
             self.D2P.save_project()
@@ -606,18 +604,12 @@ class App(CTk.CTk):
                     title='Save GCode File',
                     filetypes=[('GCode File', '*.ngc'), ('Any File', '*.*')],
                     initialdir=self.current_path,
-                    initialfile = self.D2P.loaded_file)
+                    initialfile = Path(self.D2P.loaded_file).stem)
         if file:
-            # material = {}
-            # material['nu'] = self.material_var.get().split(':')[0].strip() if self.material_var.get() else 0
-            # material['na'] = self.material_var.get().split(':')[1].strip() if self.material_var.get() else 'default'
-            # material['ph'] = self.pierce_h_var.get()
-            # material['pd'] = self.pierce_d_var.get()
-            # material['ch'] = self.cut_h_var.get()
-            # material['fr'] = self.feed_r_var.get()
-            # material['kw'] = self.kerf_var.get()
-            # to_gcode = ToGcode(self.cut_points, self.layers, self.sequences, self.ignored, self.precision)
-            self.D2P.write_gcode(file)#, self.small_hole, self.units, material)
+            error = self.D2P.write_gcode(file)
+            if error:
+                title = 'Cut Warnings'
+                Msg.showwarning(self, title, error)
 
     def show_preferences_frame(self, _event):
         self.prefs_frame.lift()
@@ -668,12 +660,12 @@ class App(CTk.CTk):
         mat.grid_columnconfigure(1, weight=1)
         label_material = CTk.CTkLabel(mat, text='Material:', width=80, anchor='e')
         label_material.grid(row=0, column=0, padx=4, pady=(4, 0), sticky='ew')
-        self.material_select = CTk.CTkOptionMenu(mat, width=240, variable=self.material_var, values=['None'], command=self.material_selected, anchor='w')
+        self.material_select = CTk.CTkOptionMenu(mat, width=240, variable=self.material_var, values=['None'], command=self.select_material, anchor='w')
         self.material_select.grid(row=0, column=1, padx=4, pady=0, sticky='nsew')
+
     def create_menu_bar(self):
         menu = CTk.CTkFrame(self.main_frame)
         menu.grid(row=0, column=0, columnspan=2, sticky='ew')
-        # menu.grid_columnconfigure(8, weight=1)
         size = 36
         col = 0
         im = CTk.CTkImage(Image.open(f'{self.icon_path}/import_dxf.png'), size=(size, size))
@@ -935,28 +927,15 @@ class App(CTk.CTk):
         self.save_preferences()
 
     def apply_prefs(self):
-        print('apply prefs')
-        print(self.D2P.lead_length)
         self.get_preferences()
-        print(self.D2P.lead_length)
         self.canvas.config(bg=self.canvas_color)
-
         for layer in self.D2P.layers:
             for path in self.D2P.sequences[layer]['lead-in']:
                 self.D2P.sequences[layer]['lead-in'][path]['length'] = self.D2P.lead_length
                 self.D2P.sequences[layer]['lead-in'][path]['angle'] = self.D2P.lead_angle
                 self.D2P.sequences[layer]['lead-in'][path]['type'] = self.D2P.lead_type
-                # print(self.D2P.sequences[layer]['lead-in'][path]['length'])
-
-        # l_length = self.D2P.sequences[layer]['lead-in'][path_num]['length']
-        # l_angle = self.D2P.sequences[layer]['lead-in'][path_num]['angle']
-        # arc_lead = self.D2Psequences[layer]['lead-in'][path_num]['type'] == 'arc'
-
-
-
         if self.D2P.loaded_file:
-            # self.D2P.last_cut = (0.0, 0.0)
-            self.get_points('cut') #self.D2P.cut_points = self.get_points('cut')
+            self.get_points('cut')
             self.do_plot()
 
     def close_prefs(self):
@@ -992,32 +971,27 @@ class App(CTk.CTk):
         self.material_file_var.set(Path(self.material_file).name)
         error = self.D2P.load_materials(self.material_file)
         if error:
-            print(error)
+            title = 'Material File Error'
+            Msg.showerror(title, error)
             return
         self.material_select.configure(values=self.D2P.material_names)
-        self.material_selected(min(self.D2P.material_names))
-
-    def material_selected(self, material):
-        ''' populate material values from selected material '''
-        num = material.split(':')[0].strip()
-        self.material_var.set(f'{num}:  {self.D2P.material_dict[num]['NAME']}')
-        self.feed_r_var.set(self.D2P.material_dict[num]['CUT_SPEED'])
-        self.kerf_var.set(self.D2P.material_dict[num]['KERF_WIDTH'])
-        self.pierce_h_var.set(self.D2P.material_dict[num]['PIERCE_HEIGHT'])
-        self.pierce_d_var.set(self.D2P.material_dict[num]['PIERCE_DELAY'])
-        self.cut_h_var.set(self.D2P.material_dict[num]['CUT_HEIGHT'])
-        self.D2P.kerf = self.kerf_var.get()
-
-        self.D2P.material['nu'] = self.material_var.get().split(':')[0].strip() if self.material_var.get() else 0
-        self.D2P.material['na'] = self.material_var.get().split(':')[1].strip() if self.material_var.get() else 'default'
-        self.D2P.material['ph'] = self.pierce_h_var.get()
-        self.D2P.material['pd'] = self.pierce_d_var.get()
-        self.D2P.material['ch'] = self.cut_h_var.get()
-        self.D2P.material['fr'] = self.feed_r_var.get()
-        self.D2P.material['kw'] = self.kerf_var.get()
-
-        self.get_points('cut')
+        self.show_material()
         self.do_plot()
+
+    def select_material(self, material):
+        ''' selected a material '''
+        self.D2P.select_material(material.split(':')[0].strip())
+        self.show_material()
+        self.do_plot()
+
+    def show_material(self):
+        ''' display material values in the sidebar'''
+        self.material_var.set(f'{self.D2P.material['nu']}:  {self.D2P.material['na']}')
+        self.pierce_h_var.set(self.D2P.material['ph'])
+        self.pierce_d_var.set(self.D2P.material['pd'])
+        self.cut_h_var.set(self.D2P.material['ch'])
+        self.feed_r_var.set(self.D2P.material['fr'])
+        self.kerf_var.set(self.D2P.material['kw'])
 
     def kerf_changed(self, value):
         ''' kerf width changed so redraw '''

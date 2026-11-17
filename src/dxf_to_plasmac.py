@@ -45,8 +45,15 @@ class dxf2PlasmaC:
         self.material = {}
         self.kerf = 1.0
         self.material = {}
-        self.material_dict = {}
-        self.material_names = []
+        self.material_names = ['1: Default']
+        self.material_dict = {'1': {'NUM': '1',
+                                    'NAME': 'Default',
+                                    'KERF_WIDTH': '1.',
+                                    'PIERCE_HEIGHT': '3.0',
+                                    'PIERCE_DELAY': '0.1',
+                                    'CUT_HEIGHT': '1.0',
+                                    'CUT_SPEED': '1000'}}
+        self.select_material('1')
 
     def _reset(self):
         ''' clear previous file state before loading a new dxf '''
@@ -73,29 +80,20 @@ class dxf2PlasmaC:
             self.error = f'\n{e}\nWhile attempting to open dxf_file\n'
 
     def reload_file(self):
-        print('D2P.reload_file',self.loaded_file,self.dxf_file)
         ''' reload the current file or project '''
         if self.loaded_file and self.dxf_file:
             self.open_dxf(self.dxf_file)
-            print('reloaded', self.dxf_file)
         elif self.loaded_file and not self.dxf_file:
             self.open_project(self.loaded_file)
-            print('reloaded', self.loaded_file)
 
     def open_dxf(self, file):
-        # self.dxf_file = file
-        # self.loaded_file = file
-        # self.ignored = []
-        # self.error = ''
         self._reset()
         self.dxf_file = file
         self.loaded_file = file
-        # to_paths = ToPaths(self.units, self.lead_type, self.lead_length, self.lead_angle, self.flattening_distance, self.gap_tolerance)
-        # self.doc, self.layers, self.paths, self.sequences, self.size, error = to_paths.get_paths(self.D2P.dxf_file)
         self.get_paths(file)
         if not self.error:
-            self.get_points('shape') #self.D2P.shape_points = self.get_points('shape')
-            self.get_points('cut') #self.D2P.cut_points = self.get_points('cut')
+            self.get_points('shape')
+            self.get_points('cut')
 
     def open_project(self, file):
         with open(file, 'rb') as f:
@@ -151,7 +149,6 @@ class dxf2PlasmaC:
                         'valid': True,
                     }
             self._set_external_paths()
-        # return self.doc, self.layers, self.paths, self.sequences, self.size, self.error
 
     def _dxf_to_paths(self):
         ''' scale geometry, centre at origin, and chain entities into paths '''
@@ -323,16 +320,10 @@ class dxf2PlasmaC:
             for n in self.sequences[layer]['cut']:
                 points[layer][n], last_cut, warnings_in = self._path_to_points(cut, self.paths[layer][n], layer, n, last_cut)
                 self.warnings.extend(warnings_in)
-                # print('points[layer][n]',type(points[layer][n]))
-            # print('points[layer]',type(points[layer]))
-        # print('points', type(points))
-        # return points, self.warnings
         if cut:
             self.cut_points = points
         else:
             self.shape_points = points
-        # print(f'points: {points}')
-        # return points, self.warnings
 
     def _path_to_points(self, cut, path, layer, path_num, last_cut):
         external_cut = self.sequences[layer]['external'][path_num]
@@ -434,7 +425,6 @@ class dxf2PlasmaC:
             s_list = []
             if cut:
                 idx = self.sequences[layer]['start'][path_num]
-                # print(f'idx = {idx}')
                 self.sequences[layer]['lead-in'][path_num]['valid'] = True
                 if idx==0:
                     default = True # use default start segment
@@ -553,8 +543,8 @@ class dxf2PlasmaC:
 
 # gcode stuff #################################################################
     def write_gcode(self, gcode_file: str):
-        unit = 'G21 ; units in millimeters' if units == 'metric' else 'G20 ; units in inches'
-        blend = 0.1 if units == 'metric' else 0.004
+        unit = 'G21 ; units in millimeters' if self.units == 'metric' else 'G20 ; units in inches'
+        blend = 0.1 if self.units == 'metric' else 0.004
         nu = self.material['nu']
         na = self.material['na']
         ph = self.material['ph']
@@ -578,7 +568,7 @@ class dxf2PlasmaC:
                     f'(o=0, nu={nu}, na={na}, ph={ph}, pd={pd}, ch={ch}, fr={fr}, kw={kw})',
                     '',
                     '#<h_velocity> = 60 ; small hole velocity = 60%',
-                    f'#<h_diameter> = {small_hole} ; small hole diameter',
+                    f'#<h_diameter> = {self.small_hole} ; small hole diameter',
                     '#<holes> = 1 ; reduce velocity  for small holes',
                     '',
                     f'{amble}',
@@ -588,10 +578,14 @@ class dxf2PlasmaC:
             if layer not in self.ignored:
                 for n, point in enumerate(self.sequences[layer]['cut']):
                     gcode.append(f'\n;layer {layer}, cut #{n + 1}')
-                    gcode.extend(self._gcode_from_points(self.points[layer][point], layer, point))
+                    gcode.extend(self._gcode_from_points(self.cut_points[layer][point], layer, point))
         gcode.append(f'\n{amble}\nM30')
-        with open(gcode_file, 'w') as f:
-            _ = f.write('\n'.join(gcode))
+        try:
+            with open(gcode_file, 'w') as f:
+                _ = f.write('\n'.join(gcode))
+        except Exception as e:
+            return f'{type(e).__name__} writing gcode file\n{e}'
+        return None
 
     def _gcode_from_points(self, points, layer, point):
         code = []
@@ -670,6 +664,19 @@ class dxf2PlasmaC:
                     temp[material]['CUT_MODE'] = line.split('=')[1].strip()
             self.material_names = [f'{o}:  {temp[o]['NAME']}' for o in temp]
             self.material_dict = dict(sorted(temp.items()))
+            self.select_material(self.material_names[0][0])
         except FileNotFoundError:
             return 'File not found'
         return None
+
+    def select_material(self, material):
+        self.material['nu'] = self.material_dict[material]['NUM']
+        self.material['na'] = self.material_dict[material]['NAME']
+        self.material['ph'] = self.material_dict[material]['PIERCE_HEIGHT']
+        self.material['pd'] = self.material_dict[material]['PIERCE_DELAY']
+        self.material['ch'] = self.material_dict[material]['CUT_HEIGHT']
+        self.material['fr'] = self.material_dict[material]['CUT_SPEED']
+        self.material['kw'] = self.material_dict[material]['KERF_WIDTH']
+        self.kerf = float(self.material['kw'])
+        if self.loaded_file:
+            self.get_points('cut')
