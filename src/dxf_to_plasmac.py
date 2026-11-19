@@ -40,7 +40,7 @@ class dxf2PlasmaC:
         self.small_hole = 0
         self.doc = ''
         self.error = ''
-        self.warnings = []
+        self.warning = []
         self.size = (0.0, 0.0)
         self.material = {}
         self.kerf = 1.0
@@ -57,16 +57,16 @@ class dxf2PlasmaC:
 
     def _reset(self):
         ''' clear previous file state before loading a new dxf '''
-        self.doc = None
+        self.doc = ''
         self.layers = []
         self.paths = {}
         self.sequences = {}
         self.size = (0.0, 0.0)
-        self.error = ''
         self.dxf_file = ''
         self.loaded_file = ''
         self.ignored = []
-        self.warnings = ''
+        self.error = ''
+        self.warning = []
 
     def _open_doc(self, dxf_file):
         ''' open a dxf file '''
@@ -78,6 +78,8 @@ class dxf2PlasmaC:
             self.error = 'Invalid or corrupted DXF file.'
         except DXFError as e:
             self.error = f'\n{e}\nWhile attempting to open dxf_file\n'
+        except Exception as e:
+            self.error = f'{type(e).__name__} opening {dxf_file}\n{e}'
 
     def reload_file(self):
         ''' reload the current file or project '''
@@ -90,69 +92,68 @@ class dxf2PlasmaC:
         self._reset()
         self.dxf_file = file
         self.loaded_file = file
-        self.get_paths(file)
+        self._open_doc(file)
         if not self.error:
+            self._get_paths()
             self.get_points('shape')
             self.get_points('cut')
 
     def open_project(self, file):
-        with open(file, 'rb') as f:
-            self.doc = pickle.load(f)
-            self.paths = pickle.load(f)
-            self.cut_points = pickle.load(f)
-            self.shape_points = pickle.load(f)
-            self.sequences = pickle.load(f)
-            self.ignored = pickle.load(f)
-            self.layers = pickle.load(f)
+        self._reset()
+        self.loaded_file = file
+        try:
+            with open(file, 'rb') as f:
+                self.doc = pickle.load(f)
+                self.paths = pickle.load(f)
+                self.cut_points = pickle.load(f)
+                self.shape_points = pickle.load(f)
+                self.sequences = pickle.load(f)
+                self.ignored = pickle.load(f)
+                self.layers = pickle.load(f)
+        except Exception as e:
+            self.error = f'{type(e).__name__} opening project {Path(file).name}\n{e}'
+            return
         self.dxf_file = ''
         self.loaded_file = file
         self.last_cut = (0.0, 0.0)
 
-    def save_project(self):
-        with open(file, 'wb') as f:
-            pickle.dump(self.D2P.doc, f)
-            pickle.dump(self.D2P.paths, f)
-            pickle.dump(self.D2P.cut_points, f)
-            pickle.dump(self.D2P.shape_points, f)
-            pickle.dump(self.D2P.sequences, f)
-            pickle.dump(self.D2P.ignored, f)
-            pickle.dump(self.D2P.layers, f)
+    def save_project(self, file):
+        self.error = ''
+        self.warning = []
+        try:
+            with open(file, 'wb') as f:
+                pickle.dump(self.doc, f)
+                pickle.dump(self.paths, f)
+                pickle.dump(self.cut_points, f)
+                pickle.dump(self.shape_points, f)
+                pickle.dump(self.sequences, f)
+                pickle.dump(self.ignored, f)
+                pickle.dump(self.layers, f)
+        except Exception as e:
+            self.error = f'{type(e).__name__} saving project {Path().name}\n{e}'
 
 # path gathering ##############################################################
-    def get_paths(self, dxf_file: str):
+    def _get_paths(self, ):
         ''' load a dxf file, convert entities to paths, and build cut sequences '''
-        # self._reset()
-        self._open_doc(dxf_file)
-        if self.doc and not self.error:
-            self.layers = [
-                layer.dxf.name
-                for layer in self.doc.layers
-                if layer.dxf.name != 'Defpoints'
-            ]
-            self._dxf_to_paths()
-            for layer in self.layers:
-                self.sequences[layer] = {
-                    'cut': [],
-                    'start': {},
-                    'external': {},
-                    'lead-in': {},
+        self.layers = [layer.dxf.name for layer in self.doc.layers if layer.dxf.name != 'Defpoints']
+        self._dxf_to_paths()
+        for layer in self.layers:
+            self.sequences[layer] = {'cut': [], 'start': {}, 'external': {}, 'lead-in': {},}
+            for n in self.paths[layer]:
+                self.sequences[layer]['cut'].append(n)
+                # circles start at 0 degrees; lines start at segment 0
+                self.sequences[layer]['start'][n] = 0
+                self.sequences[layer]['external'][n] = False
+                self.sequences[layer]['lead-in'][n] = {
+                    'type': self.lead_type,
+                    'length': self.lead_length,
+                    'angle': self.lead_angle,
+                    'valid': True,
                 }
-                for n in self.paths[layer]:
-                    self.sequences[layer]['cut'].append(n)
-                    # circles start at 0 degrees; lines start at segment 0
-                    self.sequences[layer]['start'][n] = 0
-                    self.sequences[layer]['external'][n] = False
-                    self.sequences[layer]['lead-in'][n] = {
-                        'type': self.lead_type,
-                        'length': self.lead_length,
-                        'angle': self.lead_angle,
-                        'valid': True,
-                    }
-            self._set_external_paths()
+        self._set_external_paths()
 
     def _dxf_to_paths(self):
         ''' scale geometry, centre at origin, and chain entities into paths '''
-        if self.doc is None: return
         scale = 1
         mu = self.doc.header.get('$MEASUREMENT', None)
         iu = self.doc.header.get('$INSUNITS', None)
@@ -311,15 +312,16 @@ class dxf2PlasmaC:
 
 # point gathering #############################################################
     def get_points(self, mode: str):
+        self.error = ''
+        self.warning = []
         cut = mode == 'cut'
         points = {}
         last_cut = (0.0, 0.0)
-        self.warnings = []
         for layer in self.layers:
             points[layer] = {}
             for n in self.sequences[layer]['cut']:
-                points[layer][n], last_cut, warnings_in = self._path_to_points(cut, self.paths[layer][n], layer, n, last_cut)
-                self.warnings.extend(warnings_in)
+                points[layer][n], last_cut, warning_in = self._path_to_points(cut, self.paths[layer][n], layer, n, last_cut)
+                self.warning.extend(warning_in)
         if cut:
             self.cut_points = points
         else:
@@ -332,7 +334,7 @@ class dxf2PlasmaC:
         l_angle = self.sequences[layer]['lead-in'][path_num]['angle']
         arc_lead = self.sequences[layer]['lead-in'][path_num]['type'] == 'arc'
         points_dict = {}
-        warnings = []
+        warning = []
         # circles
         if isinstance(path, dict):
             # circle center point
@@ -407,7 +409,7 @@ class dxf2PlasmaC:
                 poly = Polygon(vertices).buffer(0)
                 offset_poly = cast(Polygon | MultiPolygon, poly.buffer(offset, join_style=join_style))
                 if offset_poly.is_empty:
-                    warnings.append(f'Shape {path_num} is too constricted to offset')
+                    warning.append(f'Shape {path_num} is too constricted to offset')
                     return None
                 # cater for Polygon or MultPolygon if shape squeezed enough to break into parts
                 polys = [offset_poly] if isinstance(offset_poly, Polygon) else list(offset_poly.geoms)# type: ignore
@@ -501,7 +503,7 @@ class dxf2PlasmaC:
                             if idx == len(segments):
                                 # less than kerf away so fail
                                 if offset - float(self.kerf) < epsilon:
-                                    warnings.append(f'Could not find valid lead-in for cut {path_num}')
+                                    warning.append(f'Could not find valid lead-in for cut {path_num}')
                                     self.sequences[layer]['lead-in'][path_num]['valid'] = False
                                     idx = 2
                                     self.sequences[layer]['start'][path_num] = idx
@@ -538,11 +540,13 @@ class dxf2PlasmaC:
         last_cut = points_dict[len(points_dict)-1]['end']
         last_cut = (round(last_cut[0], self.precision),
                             round(last_cut[1], self.precision))
-        return points_dict, last_cut, warnings
+        return points_dict, last_cut, warning
 
 
 # gcode stuff #################################################################
     def write_gcode(self, gcode_file: str):
+        self.error = ''
+        self.warning = []
         unit = 'G21 ; units in millimeters' if self.units == 'metric' else 'G20 ; units in inches'
         blend = 0.1 if self.units == 'metric' else 0.004
         nu = self.material['nu']
@@ -584,8 +588,7 @@ class dxf2PlasmaC:
             with open(gcode_file, 'w') as f:
                 _ = f.write('\n'.join(gcode))
         except Exception as e:
-            return f'{type(e).__name__} writing gcode file\n{e}'
-        return None
+            self.error = f'{type(e).__name__} writing gcode file {Path(gcode_file).name} \n{e}'
 
     def _gcode_from_points(self, points, layer, point):
         code = []
@@ -625,6 +628,8 @@ class dxf2PlasmaC:
 
 # material handling ###########################################################
     def load_materials(self, file):
+        self.error = ''
+        self.warning = []
         try:
             with open(file, 'r') as f:
                 materials = f.readlines()
@@ -665,9 +670,8 @@ class dxf2PlasmaC:
             self.material_names = [f'{o}:  {temp[o]['NAME']}' for o in temp]
             self.material_dict = dict(sorted(temp.items()))
             self.select_material(self.material_names[0][0])
-        except FileNotFoundError:
-            return 'File not found'
-        return None
+        except Exception as e:
+            self.error = f'{type(e).__name__} loading material file {Path(file).name}\n{e}'
 
     def select_material(self, material):
         self.material['nu'] = self.material_dict[material]['NUM']

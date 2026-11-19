@@ -116,7 +116,6 @@ class App(CTk.CTk):
         self.mouse = (0, 0)
         self.gcode_file = ''
         self.mod_key = 'Command' if sys.platform == 'darwin' else 'Control'
-        self.size = (0.0, 0.0)
         self.tt_delay = 0.6 # tooltip delay
         self.icon_path = get_asset_path('assets/icons')
 
@@ -129,15 +128,13 @@ class App(CTk.CTk):
         self.set_preferences()
 
     def do_plot(self):
-        self.plot(self.D2P.shape_points, clear=True)
-        self.plot(self.D2P.cut_points, mode='cut', clear=False)
+        self.plot(self.D2P.shape_points, 'shape', True)
+        self.plot(self.D2P.cut_points, 'cut', False)
         self.update()
         if self.canvas.winfo_ismapped():
             if self.new_file:
                 self.zoom_all()
                 self.new_file = False
-#FIXME first zoom doesn't hold very well ??? after
-                self.after(100, self.zoom_all())
             else:
                 self.canvas.scale('all', 0, 0, self.canvas_last['scale'], self.canvas_last['scale'])
                 self.canvas.move('all', self.canvas_last['x'], self.canvas_last['y'])
@@ -163,6 +160,7 @@ class App(CTk.CTk):
                 continue
             for point in self.D2P.sequences[layer]['cut']:
                  # shape was too small to offset
+                print('\n',points[layer][point])
                 if not points[layer][point]:
                     seq += 1
                     continue
@@ -241,7 +239,7 @@ class App(CTk.CTk):
         if self.selected_item:
             tags = self.canvas.itemcget(self.selected_item, 'tags')
             seq = int(tags.split()[1])
-            layer = tags.split()[5].split('_')[1]
+            layer = tags.split()[5].split('_', 1)[1]
             cut = self.D2P.sequences[layer]['cut'][int(tags.split()[1])]
             path = self.D2P.paths[layer][self.D2P.sequences[layer]['cut'][seq]]
             segment = int(tags.split()[2])
@@ -280,6 +278,7 @@ class App(CTk.CTk):
                 case 'Line \u2192 Arc' | 'Arc \u2192 Line':
                     self.selected_item = ''
                     self.D2P.toggle_lead(layer, cut)
+                    self.error_check()
                     self.do_plot()
                 case 'Change Length':
                     self.color_selected(self.canvas.type(self.selected_item), False)
@@ -292,6 +291,7 @@ class App(CTk.CTk):
                 case 'Internal \u2192 External' | 'External \u2192 Internal':
                     self.selected_item = ''
                     self.D2P.toggle_side(layer, cut)
+                    self.error_check()
                     self.do_plot()
                 case 'Change Cut Sequence':
                     self.color_selected(self.canvas.type(self.selected_item), False)
@@ -300,6 +300,7 @@ class App(CTk.CTk):
                 case 'Set As Start Segment':
                     self.selected_item = ''
                     self.D2P.change_start_segment(layer, cut, segment)
+                    self.error_check()
                     self.do_plot()
                 case 'Change Start Angle':
                     self.color_selected(self.canvas.type(self.selected_item), False)
@@ -323,6 +324,7 @@ class App(CTk.CTk):
                              parent=self)
         if new_seq is not None and new_seq != seq + 1:
             self.D2P.change_cut_sequence(layer, cut, new_seq)
+            self.error_check()
             self.do_plot()
 
     def change_start_angle(self, cut, seq, layer):
@@ -336,6 +338,7 @@ class App(CTk.CTk):
                              parent=self)
         if ang is not None and ang != seq + 1:
             self.D2P.change_start_angle(layer, cut, ang)
+            self.error_check()
             self.do_plot()
 
     def lead_in_length(self, cut, radius, external_cut, layer):
@@ -348,6 +351,7 @@ class App(CTk.CTk):
                              parent=self)
         if length is not None:
             self.D2P.change_lead_in_length(layer, cut, length)
+            self.error_check()
             self.do_plot()
 
     def lead_in_angle(self, cut, layer):
@@ -359,6 +363,7 @@ class App(CTk.CTk):
                              parent=self)
         if angle is not None:
             self.D2P.change_lead_in_angle(layer, cut, angle)
+            self.error_check()
             self.do_plot()
 
     def zoom_in(self, _event):
@@ -399,14 +404,15 @@ class App(CTk.CTk):
         yMove = -bbox[1] + y_diff
         # move the canvas
         self.canvas.move('all', xMove, yMove)
-        # store the current data
-        self.canvas_last['scale'] *= scale
+        # store the current scale and offsets
         if self.new_file:
+            self.canvas_last['scale'] = scale
             self.canvas_last['x'] = xMove
             self.canvas_last['y'] = yMove
             self.canvas_first['x'] = xMove
             self.canvas_first['y'] = yMove
         else:
+            self.canvas_last['scale'] *= scale
             self.canvas_last['x'] = self.canvas_first['x']
             self.canvas_last['y'] = self.canvas_first['y']
 
@@ -526,16 +532,18 @@ class App(CTk.CTk):
             elif itemType == 'arc':
                 self.canvas.itemconfig(self.selected_item, outline=color)
 
+    def error_check(self):
+        if self.D2P.warning:
+           Msg.showwarning(self, 'Warning', '\n'.join(self.D2P.warning))
+        if self.D2P.error:
+            Msg.showerror(self, 'Error', self.D2P.error)
+            return True
+        return False
+
     def reload(self, _event):
         self.D2P.reload_file()
-        if self.D2P.error:
-            title = 'File Open Error'
-            Msg.showerror(self, title, self.D2P.error)
+        if self.error_check():
             return
-        if self.D2P.warnings:
-            title = 'Cut Warnings'
-            message = "\n".join(self.D2P.warnings)
-            Msg.showwarning(self, title, message)
         self.create_layer_widgets() # need this in case some layers were disabled
         self.do_plot()
 
@@ -551,10 +559,8 @@ class App(CTk.CTk):
             self.new_file = True
             self.selected_item = ''
             self.D2P.open_project(file)
-            if self.D2P.warnings:
-                title = 'Cut Warnings'
-                message = "\n".join(self.D2P.warnings)
-                Msg.showwarning(self, title, message)
+            if self.error_check():
+                return
             self.create_layer_widgets()
             self.do_plot()
 
@@ -566,7 +572,8 @@ class App(CTk.CTk):
                     initialfile = Path(self.D2P.loaded_file).stem)
         if file:
             self.current_path = str(Path(file).parent)
-            self.D2P.save_project()
+            self.D2P.save_project(file)
+            self.error_check()
 
     def import_dxf(self, _event):
         file = Open(parent=self,
@@ -578,26 +585,17 @@ class App(CTk.CTk):
             self.current_path = str(Path(file).parent)
             self.new_file = True
             self.D2P.open_dxf(file)
-            if self.D2P.error:
-                title = 'File Open Error'
-                Msg.showerror(self, title, self.D2P.error)
+            if self.error_check():
                 return
-            if self.D2P.warnings:
-                title = 'Cut Warnings'
-                message = "\n".join(self.D2P.warnings)
-                Msg.showwarning(self, title, message)
             self.create_layer_widgets()
             post = 'mm' if self.D2P.units == 'metric' else 'in'
-            self.title(f'{self.title()}     Size: {self.size[0]}{post} x {self.size[1]}{post}')
+            self.title(f'{self.title()}     Size: {self.D2P.size[0]}{post} x {self.D2P.size[1]}{post}')
             self.do_plot()
 
 
     def get_points(self, mode: str):
         self.D2P.get_points(mode)
-        if self.D2P.warnings:
-            title = 'Cut Warnings'
-            message = "\n".join(self.D2P.warnings)
-            Msg.showwarning(self, title, message)
+        self.error_check()
 
     def export_gcode(self, _event):
         file = Save(parent=self,
@@ -606,10 +604,8 @@ class App(CTk.CTk):
                     initialdir=self.current_path,
                     initialfile = Path(self.D2P.loaded_file).stem)
         if file:
-            error = self.D2P.write_gcode(file)
-            if error:
-                title = 'Cut Warnings'
-                Msg.showwarning(self, title, error)
+            self.D2P.write_gcode(file)
+            self.error_check()
 
     def show_preferences_frame(self, _event):
         self.prefs_frame.lift()
@@ -969,10 +965,8 @@ class App(CTk.CTk):
     def load_material_file(self):
         ''' load materials form material file '''
         self.material_file_var.set(Path(self.material_file).name)
-        error = self.D2P.load_materials(self.material_file)
-        if error:
-            title = 'Material File Error'
-            Msg.showerror(title, error)
+        self.D2P.load_materials(self.material_file)
+        if self.error_check():
             return
         self.material_select.configure(values=self.D2P.material_names)
         self.show_material()
