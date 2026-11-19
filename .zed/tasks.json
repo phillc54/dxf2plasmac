@@ -3,5 +3,10 @@
     "label": "Start Python Script",
     "command": "pixi run python3 -m src.${ZED_STEM}",
     "save" : "current"
+  },
+  {
+    "label": "Start QMain",
+    "command": "pixi run python3 -m src.qmain",
+    "save" : "current"
   }
 ]
