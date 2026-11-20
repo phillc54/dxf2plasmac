@@ -14,6 +14,7 @@ from PyQt5.QtCore import (
 from PyQt5.QtGui import (
     QBrush,
     QColor,
+    QCursor,
     QIcon,
     QPainter,
     QPainterPath,
@@ -21,7 +22,10 @@ from PyQt5.QtGui import (
     QPen,
 )
 from PyQt5.QtWidgets import (
-    QApplication,
+    QAction,
+    QCheckBox,
+    QComboBox,
+    QDoubleSpinBox,
     QFileDialog,
     QFrame,
     QGraphicsEllipseItem,
@@ -33,8 +37,8 @@ from PyQt5.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
-    QMainWindow,
-    QPushButton,
+    QMenu,
+    QMessageBox,
     QSizePolicy,
     QSpacerItem,
     QToolButton,
@@ -44,8 +48,12 @@ from PyQt5.QtWidgets import (
 
 from .dxf_to_plasmac import dxf2PlasmaC
 
-TAG_KEY = 0
-
+TAG_LAYER    = 0
+TAG_MODE     = 1
+TAG_SEQUENCE = 2
+TAG_SEGMENT  = 3
+TAG_TYPE     = 4
+TAG_COLOR    = 5
 
 def get_asset_path(relative_path: str) -> str:
     ''' resolves paths for local pixi development and compiled pyinstaller bundles '''
@@ -56,29 +64,8 @@ def get_asset_path(relative_path: str) -> str:
     return os.path.join(base_path, relative_path)
 
 
-class SelectablePathItem(QGraphicsPathItem):
-    '''A custom line/arc item with tags and selection styling.'''
-    def __init__(self, path: QPainterPath, tags: list[str], color: QColor=Qt.blue):
-        super().__init__(path)
-        self.default_pen = QPen(color, 2)
-        self.selected_pen = QPen(Qt.red, 3, Qt.DashLine)
-        # self.default_pen.setCosmetic(True)
-        # self.selected_pen.setCosmetic(True)
-
-        self.setPen(self.default_pen)
-        self.setData(TAG_KEY, set(tags))
-
-        self.setFlag(QGraphicsItem.ItemIsSelectable, True)
-        # self.setFlag(QGraphicsItem.ItemIsMovable, True)
-
-    @override
-    def paint(self, painter, option, widget=None):
-        painter.setPen(self.selected_pen if self.isSelected() else self.default_pen)
-        painter.drawPath(self.path())
-
-
-class ScrollbarFreeCanvas(QGraphicsView):
-    '''QGraphicsView with no scrollbars, supporting mouse and button zoom/pan.'''
+class Canvas(QGraphicsView):
+    ''' QGraphicsView with no scrollbars, with mouse and button zoom/pan '''
     def __init__(self, scene: QGraphicsScene):
         super().__init__(scene)
         self.setRenderHint(QPainter.Antialiasing)
@@ -92,101 +79,82 @@ class ScrollbarFreeCanvas(QGraphicsView):
         self.setResizeAnchor(QGraphicsView.NoAnchor)
 
         # Default mode: Drag a box to select items
-        self.setDragMode(QGraphicsView.RubberBandDrag)
+        self.setDragMode(QGraphicsView.NoDrag)
 
         self._is_panning = False
-        self._pan_mode_active = False  # Toggled via UI button
+        self._pan_mode_active = True
         self._pan_start = None
 
     def zoom_all(self):
-        # 1. Force the scene to recalculate its bounding rect
+        ''' zoom to fit with a delay to ensure processing is complete '''
         self.scene().setSceneRect(self.scene().itemsBoundingRect())
-
-        # 2. Defer fitInView until the event loop processes the geometry changes
         QTimer.singleShot(000, self.zoom_all_zoom)
-        # QApplication.processEvents()
-        # self.zoom_all_zoom()
 
     def zoom_all_zoom(self):
+        ''' complete the zoom '''
         pad = 8
         rect = self.scene().itemsBoundingRect()
         if not rect.isNull():
             rect.adjust(-pad, -pad, pad, pad)
             self.fitInView(rect, Qt.KeepAspectRatio)
 
-    def set_pan_mode(self, enabled: bool):
-        '''Toggle left-click panning mode from the UI panel.'''
-        self._pan_mode_active = enabled
-        if enabled:
-            self.setDragMode(QGraphicsView.NoDrag)
-            self.setCursor(Qt.OpenHandCursor)
-        else:
-            self.setDragMode(QGraphicsView.RubberBandDrag)
-            self.setCursor(Qt.ArrowCursor)
-
-    def zoom_by(self, factor: float, anchor_pos=None):
-        '''Zoom around a specific viewport point (or center if triggered by UI button).'''
+    def zoom_step(self, factor: float, anchor_pos=None):
+        ''' zoom  by mouse wheel or button steps'''
         if anchor_pos is None:
             anchor_pos = self.viewport().rect().center()
-
         old_pos = self.mapToScene(anchor_pos)
         self.scale(factor, factor)
         new_pos = self.mapToScene(anchor_pos)
-
         # Shift view so the point under the cursor/center stays stationary
         delta = new_pos - old_pos
         self.translate(delta.x(), delta.y())
 
-    def pan_by(self, dx: float, dy: float):
-        '''Shift the canvas in screen pixels regardless of current zoom level.'''
+    def pan_step(self, dx: float, dy: float):
+        ''' pan by right mouse drag or buttons'''
         scale = self.transform().m11()
         self.translate(dx / scale, dy / scale)
 
-    def reset_view(self):
-        '''Reset zoom and pan back to origin.'''
-        self.resetTransform()
-
     @override
     def wheelEvent(self, event):
-        # zoom_factor = 1.15 if event.angleDelta().y() > 0 else (1 / 1.15)
+        ''' zoom by wheel '''
         zoom_factor = 1.05 if event.angleDelta().y() > 0 else (1 / 1.05)
-        self.zoom_by(zoom_factor, event.pos())
+        self.zoom_step(zoom_factor, event.pos())
 
     @override
     def mousePressEvent(self, event):
-        # Pan with Middle Mouse Button OR Left Click when Pan Mode is active
-        if event.button() == Qt.MiddleButton or (
-            event.button() == Qt.LeftButton and self._pan_mode_active
-        ):
+        ''' start pan by right mouse '''
+        if event.button() == Qt.RightButton:
             self._is_panning = True
             self._pan_start = event.pos()
-            self.setCursor(Qt.ClosedHandCursor)
+            self.setCursor(Qt.OpenHandCursor)
             event.accept()
         else:
             super().mousePressEvent(event)
 
     @override
     def mouseMoveEvent(self, event):
+        ''' pan by mouse drag '''
         if self._is_panning and self._pan_start is not None:
             delta = event.pos() - self._pan_start
             self._pan_start = event.pos()
-            self.pan_by(delta.x(), delta.y())
+            self.pan_step(delta.x(), delta.y())
             event.accept()
         else:
             super().mouseMoveEvent(event)
 
     @override
     def mouseReleaseEvent(self, event):
+        ''' end pan by mouse '''
         if self._is_panning:
             self._is_panning = False
-            self.setCursor(Qt.OpenHandCursor if self._pan_mode_active else Qt.ArrowCursor)
+            self.setCursor(Qt.ArrowCursor)
             event.accept()
         else:
             super().mouseReleaseEvent(event)
 
 
-class OutlinePathItem(QGraphicsPathItem):
-    ''' simple outline paths '''
+class OutlinePath(QGraphicsPathItem):
+    ''' simple outline path for original shape and rapids '''
     @override
     def shape(self):
         stroker = QPainterPathStroker()
@@ -194,17 +162,16 @@ class OutlinePathItem(QGraphicsPathItem):
         return stroker.createStroke(self.path())
 
 
-class InteractivePathItem(OutlinePathItem):
-    ''' outline paths with marker cross '''
+class OutlineCutPath(OutlinePath):
+    ''' outline paths with marker cross for cuts except rapids '''
     def __init__(self, path, marker_item):
         super().__init__(path)
         self.marker = marker_item
         self.setAcceptHoverEvents(True)
-        # Make the clickable/hoverable area slightly thicker than the visible line
         self.setPen(QPen(QColor('#2b5b84'), 3))
 
     def get_closest_point(self, local_pos, samples=200):
-        '''Finds the point on the QPainterPath closest to local_pos.'''
+        ''' find closect point on the path to the mouse '''
         path = self.path()
         closest_pt = QPointF()
         min_dist = float('inf')
@@ -248,84 +215,63 @@ class InteractivePathItem(OutlinePathItem):
 
 
 class dxfGui(QFrame):
-    def __init__(self):
+    def __init__(self, material_file=''):
         super().__init__()
-
-        # self.setFrameShape(QFrame.StyledPanel)
-        # self.setFrameShadow(QFrame.Raised)
-        # self.setLineWidth(2)
-        # self.setWindowTitle('PyQt5 Lines & Arcs: Scrollbar-Free Pan, Zoom & Tags')
-        # self.resize(1000, 650)
-
-        # Give the scene a massive virtual boundary so panning isn't restricted
-        # self.scene = QGraphicsScene(-50000, -50000, 100000, 100000)
-        # self.scene = QGraphicsScene(-5000, -5000, 100000, 100000)
         self.scene = QGraphicsScene(-5000, -5000, 10000, 10000)
-        self.canvas = ScrollbarFreeCanvas(self.scene)
-        self.cross_marker = self.create_marker_cross()
-        # self.scene.addItem(self.cross_marker)
+        self.canvas = Canvas(self.scene)
+        self.cross_marker = None
 
-        self.D2P = dxf2PlasmaC()
         self.current_path = ''
         self.new_file = ''
 
+        self.material_file = material_file
+        print('material file =', self.material_file)
 
         self.shape_color = Qt.black
         self.rapid_color = Qt.blue
         self.leadin_color = Qt.cyan
         self.cut_color_external  = Qt.red
-        self.invalid_color  = Qt.magenta
         self.cut_color_internal = Qt.green
+        self.invalid_color  = Qt.magenta
         self.selectedColor = Qt.yellow
 
         # self._populate_sample_items()
         self.icon_path = get_asset_path('assets/icons')
+
+        self.D2P = dxf2PlasmaC()
+        # self.D2P.lead_type = 'arc'
+
         self._setup_ui()
 
-        self.import_dxf()
+        # self.canvas.setContextMenuPolicy(Qt.CustomContextMenu)
+        # self.canvas.customContextMenuRequested.connect(self.show_popup_menu)
 
+        # self.import_dxf()
 
-    def create_marker_cross(self, size=2, color=Qt.red):
-        ''' create a marker cross '''
-        pen = QPen(color, 2)
-        pen.setCosmetic(True)
-        cross_path = QPainterPath()
-        cross_path.moveTo(-size, -size)
-        cross_path.lineTo(size, size)
-        cross_path.moveTo(-size, size)
-        cross_path.lineTo(size, -size)
-        cross_item = QGraphicsPathItem(cross_path)
-        cross_item.setPen(pen)
-        # cross_item.setZValue(10)  # render above the line
-        cross_item.setVisible(False)
-        return cross_item
 
     def import_dxf(self):
+        ''' load and process a dxf file '''
         file, _ = QFileDialog.getOpenFileName(
                     self,
                     'Open DXF File',
                     filter='DXF File (*.dxf);;Any File (*)',
                     directory=self.current_path)
-        print(file)
         if file:
             self.setWindowTitle(f'dxf2PlasmaC     dxf file: {Path(file).name}')
             self.current_path = str(Path(file).parent)
             self.new_file = True
             self.D2P.open_dxf(file)
-            # if self.error_check():
-            #     return
-            # self.create_layer_widgets()
+            if self.error_check():
+                return
+            self.create_layer_widgets()
             post = 'mm' if self.D2P.units == 'metric' else 'in'
             self.setWindowTitle(f'{self.windowTitle()}     Size: {self.D2P.size[0]}{post} x {self.D2P.size[1]}{post}')
             self.do_plot()
 
     def do_plot(self):
-
-        # print(self.D2P.shape_points)
-
+        ''' plot the job '''
         self.plot(self.D2P.shape_points, 'shape', True)
         self.plot(self.D2P.cut_points, 'cut', False)
-
         self.canvas.zoom_all()
         # self.update()
         # if self.canvas.winfo_ismapped():
@@ -336,18 +282,22 @@ class dxfGui(QFrame):
         #         self.canvas.scale('all', 0, 0, self.canvas_last['scale'], self.canvas_last['scale'])
         #         self.canvas.move('all', self.canvas_last['x'], self.canvas_last['y'])
 
-    def paint(self, painter, option, _a):
-        option.state = QStyle.State_None
-        return super(MyClassName, self).paint(painter,option)
+    # def paint(self, painter, option, _a):
+    #     option.state = QStyle.State_None
+    #     return super(MyClassName, self).paint(painter,option)
 
     def plot(self, points, mode:str='shape', clear:bool=False):
-        ''' plot a job '''
-        # the only difference between metric and inch are the origin pointer lengths
-        spot = 10 if self.D2P.units == 'metric' else 0.02
+        ''' plot a shape or a cut '''
+#FIXME        # the only difference between metric and inch are the origin pointer lengths
+        spot = 2 if self.D2P.units == 'metric' else 0.02
         seq = 0
+        # keep pyright quiet
+        path = ''
+        item = ''
         # delete all existing objects
         if clear:
             self.scene.clear()
+            self.cross_marker = self.create_marker_cross()
             self.scene.addItem(self.cross_marker)
             # self.mouse = (0, 0)
         # draw origin pointers once only
@@ -395,7 +345,7 @@ class dxfGui(QFrame):
                              self.cut_color_external if self.D2P.sequences[layer]['external'][point] else
                              self.invalid_color if not self.D2P.sequences[layer]['lead-in'][point]['valid'] else
                              self.cut_color_internal)
-                    seg_type = 'rapid' if segment == 0 else 'lead-in' if segment == 1 else 'feed'
+                    seg_type = 'rapid' if segment == 0 else 'lead-in' if segment == 1 else 'feed' if mode == 'cut' else 'shape'
                     pen = QPen(color, 2)
                     pen.setCosmetic(True)
                     # rapid segment
@@ -403,7 +353,7 @@ class dxfGui(QFrame):
                         path = QPainterPath()
                         path.moveTo(x1, y1)
                         path.lineTo(x2, y2)
-                        p = self.scene.addPath(path, pen)
+                        item = self.scene.addPath(path, pen)
                     # lead-in segment
                     elif segment == 1:
                         # arc lead-in
@@ -411,26 +361,26 @@ class dxfGui(QFrame):
                             x = line['cp'][0]
                             y = line['cp'][1] * -1
                             r = line['r']
-                            c = QPainterPath()
-                            c.arcMoveTo(QRectF(x-r, y-r, r*2, r*2), ang)
-                            c.arcTo(QRectF(x-r, y-r, r*2, r*2), ang, span)
-                            path = InteractivePathItem(c, self.cross_marker) if mode == 'cut' else OutlinePathItem(c)
-                            path.setPen(pen)
+                            ang = line['sa']
+                            span = line['e']
+                            path = QPainterPath()
+                            path.arcMoveTo(QRectF(x-r, y-r, r*2, r*2), ang)
+                            path.arcTo(QRectF(x-r, y-r, r*2, r*2), ang, span)
+                            item = OutlineCutPath(path, self.cross_marker) if mode == 'cut' else OutlinePath(path)
+                            item.setPen(pen)
                             if mode == 'cut':
-                                part.setFlag(QGraphicsItem.ItemIsSelectable, True)
-                            self.scene.addItem(path)
-                            p = path
+                                item.setFlag(QGraphicsItem.ItemIsSelectable, True)
+                            self.scene.addItem(item)
                         # line lead-in
                         else:
-                            l = QPainterPath()
-                            l.moveTo(x1, y1)
-                            l.lineTo(x2, y2)
-                            path = InteractivePathItem(l, self.cross_marker) if mode == 'cut' else OutlinePathItem(l)
-                            path.setPen(pen)
+                            path = QPainterPath()
+                            path.moveTo(x1, y1)
+                            path.lineTo(x2, y2)
+                            item = OutlineCutPath(path, self.cross_marker) if mode == 'cut' else OutlinePath(path)
+                            item.setPen(pen)
                             if mode == 'cut':
-                                path.setFlag(QGraphicsItem.ItemIsSelectable, True)
-                            self.scene.addItem(path)
-                            p = path
+                                item.setFlag(QGraphicsItem.ItemIsSelectable, True)
+                            self.scene.addItem(item)
                     # shape and cut segments
                     elif segment == 2:
                         # circle, there are no mor segments
@@ -438,39 +388,39 @@ class dxfGui(QFrame):
                             x = line['cp'][0]
                             y = line['cp'][1] * -1
                             r = line['r']
-                            c = QPainterPath()
-                            c.addEllipse(x-r, y-r, r*2, r*2)
-                            path = InteractivePathItem(c, self.cross_marker) if mode == 'cut' else OutlinePathItem(c)
-                            path.setPen(pen)
+                            path = QPainterPath()
+                            path.addEllipse(x-r, y-r, r*2, r*2)
+                            item = OutlineCutPath(path, self.cross_marker) if mode == 'cut' else OutlinePath(path)
+                            item.setPen(pen)
                             if mode == 'cut':
-                                path.setFlag(QGraphicsItem.ItemIsSelectable, True)
-                            self.scene.addItem(path)
-                            p = path
+                                item.setFlag(QGraphicsItem.ItemIsSelectable, True)
+                            self.scene.addItem(item)
                         # line, this is the start
                         else:
-                            l = QPainterPath()
-                            l.moveTo(x1, y1)
+                            path = QPainterPath()
+                            path.moveTo(x1, y1)
                             # print(f'{segment}:{x1,y1}')                    # line end segments
                             # print(f'{segment}:{x2,y2}')                    # line end segments
-                    else:
-                        l.lineTo(x2, y2)
+                    # else:
+                    elif segment < len(points[layer][point])-2:
+                        path.lineTo(x2, y2)
                     # last line segment
-                    if segment == len(points[layer][point])-2 and segment > 3:
+                    # if segment == len(points[layer][point])-2 and segment > 3:
+                    if segment == len(points[layer][point])-1 and segment > 3:
                         # print('last point', segment)
-                        path = InteractivePathItem(l, self.cross_marker) if mode == 'cut' else OutlinePathItem(l)
-                        path.setPen(pen)
+                        item = OutlineCutPath(path, self.cross_marker) if mode == 'cut' else OutlinePath(path)
+                        item.setPen(pen)
                         if mode == 'cut':
-                            path.setFlag(QGraphicsItem.ItemIsSelectable, True)
-                        self.scene.addItem(path)
-                        p = path
+                            item.setFlag(QGraphicsItem.ItemIsSelectable, True)
+                        self.scene.addItem(item)
                     # segments 0, 1, and last segment require tags
                     if segment < 2 or segment == len(points[layer][point])-1:
-                        p.setData(0, layer)
-                        p.setData(1, mode)
-                        p.setData(2, str(seq))
-                        p.setData(3, str(line['seg']))
-                        p.setData(4, seg_type)
-                        p.setData(5, QColor(color).name())
+                        item.setData(TAG_LAYER, layer)
+                        item.setData(TAG_MODE, mode)
+                        item.setData(TAG_SEQUENCE, str(seq))
+                        item.setData(TAG_SEGMENT, str(line['seg']))
+                        item.setData(TAG_TYPE, seg_type)
+                        item.setData(TAG_COLOR, QColor(color).name())
 
 
 #FIXME - fix the last half segment
@@ -484,219 +434,506 @@ class dxfGui(QFrame):
 #                         #     self.canvas.create_line(x1, y1, x2, y2, width=1, fill=fill, tags=tags, state=state)
 
                 seq += 1
-        # if not self.show_rapids:
-        #     self.canvas.itemconfig('rapid', state='hidden')
-        # self.hide_paths_by_tag(4, 'lead-in')
+        if not self.show_rapids.isChecked():
+            self.hide_paths_by_tag(4, 'rapid', False)
 
-    def hide_paths_by_tag(self, tag, target):
+    def hide_paths_by_tag(self, tag, target, visible):
+        ''' show/hide paths by tag '''
         if not self.scene:
             return
+        print(f'hide:  tag:{tag}  target:{target}  visible:{visible}')
         for item in self.scene.items():
             if isinstance(item, QGraphicsPathItem) and item.data(tag) == target:
-                    item.setVisible(False)
+                    item.setVisible(visible)
 
-                        # p.setData(0, layer)
-                        # p.setData(1, mode)
-                        # p.setData(2, str(seq))
-                        # p.setData(3, str(line['seg']))
-                        # p.setData(4, seg_type)
+    def show_rapids_changed(self, state):
+        ''' show/hide rapid moves '''
+        self.hide_paths_by_tag(TAG_TYPE, 'rapid', state)
 
+    def show_lead_ins_changed(self, state):
+        ''' show/hide lead-ins '''
+        self.hide_paths_by_tag(TAG_TYPE, 'lead-in', state)
+
+    def show_feeds_changed(self, state):
+        ''' show/hide cut moves '''
+        self.hide_paths_by_tag(TAG_TYPE, 'feed', state)
+
+    def show_shapes_changed(self, state):
+        ''' show/hide original shapes '''
+        self.hide_paths_by_tag(TAG_MODE, 'shape', state)
+
+    def show_layers_changed(self, state, layer):
+        ''' show/hide layers by name '''
+        self.hide_paths_by_tag(TAG_LAYER, layer, state)
+
+    def create_marker_cross(self, size=2, color=Qt.red):
+        ''' create a marker cross '''
+        pen = QPen(color, 2)
+        pen.setCosmetic(True)
+        cross_path = QPainterPath()
+        cross_path.moveTo(-size, -size)
+        cross_path.lineTo(size, size)
+        cross_path.moveTo(-size, size)
+        cross_path.lineTo(size, -size)
+        cross_item = QGraphicsPathItem(cross_path)
+        cross_item.setPen(pen)
+        # cross_item.setZValue(10)  # render above the line
+        cross_item.setVisible(False)
+        return cross_item
+
+    def create_layer_widgets(self):
+        ''' create layer checkboxes in the sidebar '''
+        self.clear_layout(self.layer_layout)
+        for layer in self.D2P.layers:
+            check = QCheckBox(layer)
+            if layer not in self.D2P.ignored:
+                check.setChecked(True)
+            check.stateChanged.connect(lambda s, l=layer: self.show_layers_changed(s, l))
+            self.layer_layout.addWidget(check)
+
+    def clear_layout(self, layout):
+        ''' remove layer checkboxes from the sidebar '''
+        if layout is not None:
+            while layout.count():
+                item = layout.takeAt(0)
+                widget = item.widget()
+                if widget is not None:
+                    widget.deleteLater()
+
+    def load_material_file(self):
+        ''' load materials form material file '''
+        self.D2P.load_materials(self.material_file)
+        if self.error_check():
+            return
+        self.material_select.addItems(self.D2P.material_names)
+        self.show_material()
+        if self.D2P.loaded_file:
+            self.do_plot()
+
+    def show_material(self):
+        ''' display material values in the sidebar'''
+        # self.material_var.set(f'{self.D2P.material['nu']}:  {self.D2P.material['na']}')
+        self.kerf_width.setValue(float(self.D2P.material['kw']))
+        self.cut_speed.setValue(float(self.D2P.material['fr']))
+        self.cut_height.setValue(float(self.D2P.material['ch']))
+        self.pierce_height.setValue(float(self.D2P.material['ph']))
+        self.pierce_delay.setValue(float(self.D2P.material['pd']))
+
+    def select_material(self, material):
+        ''' selected a material '''
+        self.D2P.select_material(material.split(':')[0].strip())
+        self.show_material()
+        if self.D2P.loaded_file:
+            self.do_plot()
+
+    def kerf_changed(self, value):
+        ''' kerf width changed, redraw if required '''
+        try:
+            self.D2P.kerf = float(value)
+            if self.D2P.loaded_file:
+                self.D2P.get_points('cut')
+                self.error_check()
+                self.do_plot()
+        except ValueError:
+            pass
+
+    def error_check(self):
+        ''' display warnings and or errors '''
+        if self.D2P.warning:
+            QMessageBox.warning(self, 'Warning', '\n'.join(self.D2P.warning))
+        if self.D2P.error:
+            QMessageBox.critical(self, 'Error', self.D2P.error)
+            return True
+        return False
 
     def _setup_ui(self):
-        # main_layout = QHBoxLayout(self)
-        # main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout = QGridLayout(self)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-
-        # Left side: Canvas
-        # main_layout.addWidget(self.canvas, stretch=1)
-        main_layout.addWidget(self.canvas, 1, 1)
-
+        ''' create the ui '''
+        # layout
+        layout = QGridLayout(self)
+        layout.setContentsMargins(2, 2, 2, 2)
+        layout.setSpacing(2)
+        # canvas at row 1 column 1
+        layout.addWidget(self.canvas, 1, 1)
+        # toolbar at row 0
         toolbar = QHBoxLayout()
+        toolbar.setContentsMargins(0, 0, 0, 0)
         icon_size = 32
-
+        pan_step = 50  # pixels per click
+        # file
         btn_import_dxf = QToolButton()
         btn_import_dxf.setFixedSize(QSize(icon_size, icon_size))
         btn_import_dxf.setIcon(QIcon(f'{self.icon_path}/import_dxf.png'))
         btn_import_dxf.setIconSize(QSize(icon_size, icon_size))
         btn_import_dxf.setAutoRaise(True)
         btn_import_dxf.setToolTip('Import DXF file')
+        btn_import_dxf.clicked.connect(self.import_dxf)
         toolbar.addWidget(btn_import_dxf)
-
         btn_export_gcode = QToolButton()
         btn_export_gcode.setFixedSize(QSize(icon_size, icon_size))
         btn_export_gcode.setIcon(QIcon(f'{self.icon_path}/export_gcode.png'))
         btn_export_gcode.setIconSize(QSize(icon_size, icon_size))
         btn_export_gcode.setToolTip('Export Gcode file')
         toolbar.addWidget(btn_export_gcode)
-
+        # reload
         btn_reload = QToolButton()
         btn_reload.setFixedSize(QSize(icon_size, icon_size))
         btn_reload.setIcon(QIcon(f'{self.icon_path}/reload.png'))
         btn_reload.setIconSize(QSize(icon_size, icon_size))
+        btn_reload.setToolTip('Reload DXF file or project')
         toolbar.addWidget(btn_reload)
-
+        # project
         btn_open_project = QToolButton()
         btn_open_project.setFixedSize(QSize(icon_size, icon_size))
         btn_open_project.setIcon(QIcon(f'{self.icon_path}/open_project.png'))
         btn_open_project.setIconSize(QSize(icon_size, icon_size))
+        btn_open_project.setToolTip('Open a saved project')
         toolbar.addWidget(btn_open_project)
-
         btn_save_project = QToolButton()
         btn_save_project.setFixedSize(QSize(icon_size, icon_size))
         btn_save_project.setIcon(QIcon(f'{self.icon_path}/save_project.png'))
         btn_save_project.setIconSize(QSize(icon_size, icon_size))
+        btn_save_project.setToolTip('Save a project')
         toolbar.addWidget(btn_save_project)
-
+        # settings
         btn_settings = QToolButton()
         btn_settings.setFixedSize(QSize(icon_size, icon_size))
         btn_settings.setIcon(QIcon(f'{self.icon_path}/settings.png'))
         btn_settings.setIconSize(QSize(icon_size, icon_size))
+        btn_settings.setToolTip('Settings')
         toolbar.addWidget(btn_settings)
-
+        # info
         btn_info = QToolButton()
         btn_info.setFixedSize(QSize(icon_size, icon_size))
         btn_info.setIcon(QIcon(f'{self.icon_path}/info.png'))
         btn_info.setIconSize(QSize(icon_size, icon_size))
+        btn_info.setToolTip('Information')
         toolbar.addWidget(btn_info)
-
+        # zoom
         btn_zoom_all = QToolButton()
         btn_zoom_all.setFixedSize(QSize(icon_size, icon_size))
         btn_zoom_all.setIcon(QIcon(f'{self.icon_path}/zoom_all.png'))
         btn_zoom_all.setIconSize(QSize(icon_size, icon_size))
+        btn_zoom_all.clicked.connect(self.canvas.zoom_all)
+        btn_zoom_all.setToolTip('Zoom to fit')
         toolbar.addWidget(btn_zoom_all)
-
         btn_zoom_in = QToolButton()
         btn_zoom_in.setFixedSize(QSize(icon_size, icon_size))
         btn_zoom_in.setIcon(QIcon(f'{self.icon_path}/zoom_in.png'))
         btn_zoom_in.setIconSize(QSize(icon_size, icon_size))
+        btn_zoom_in.clicked.connect(lambda: self.canvas.zoom_step(1.25))
+        btn_zoom_in.setToolTip('Zoom in')
         toolbar.addWidget(btn_zoom_in)
-
         btn_zoom_out = QToolButton()
         btn_zoom_out.setFixedSize(QSize(icon_size, icon_size))
         btn_zoom_out.setIcon(QIcon(f'{self.icon_path}/zoom_out.png'))
         btn_zoom_out.setIconSize(QSize(icon_size, icon_size))
+        btn_zoom_out.clicked.connect(lambda: self.canvas.zoom_step(0.8))
+        btn_zoom_out.setToolTip('Zoom out')
         toolbar.addWidget(btn_zoom_out)
-
+        # pan
         btn_pan_left = QToolButton()
         btn_pan_left.setFixedSize(QSize(icon_size, icon_size))
         btn_pan_left.setIcon(QIcon(f'{self.icon_path}/pan_left.png'))
         btn_pan_left.setIconSize(QSize(icon_size, icon_size))
+        btn_pan_left.clicked.connect(lambda: self.canvas.pan_step(pan_step, 0))
+        btn_pan_left.setToolTip('Pan left')
         toolbar.addWidget(btn_pan_left)
-
         btn_pan_right = QToolButton()
         btn_pan_right.setFixedSize(QSize(icon_size, icon_size))
         btn_pan_right.setIcon(QIcon(f'{self.icon_path}/pan_right.png'))
         btn_pan_right.setIconSize(QSize(icon_size, icon_size))
+        btn_pan_right.clicked.connect(lambda: self.canvas.pan_step(-pan_step, 0))
+        btn_pan_right.setToolTip('Pan right')
         toolbar.addWidget(btn_pan_right)
-
         btn_pan_up = QToolButton()
         btn_pan_up.setFixedSize(QSize(icon_size, icon_size))
         btn_pan_up.setIcon(QIcon(f'{self.icon_path}/pan_up.png'))
         btn_pan_up.setIconSize(QSize(icon_size, icon_size))
+        btn_pan_up.clicked.connect(lambda: self.canvas.pan_step(0, pan_step))
+        btn_pan_up.setToolTip('Pan up')
         toolbar.addWidget(btn_pan_up)
-
         btn_pan_down = QToolButton()
         btn_pan_down.setFixedSize(QSize(icon_size, icon_size))
         btn_pan_down.setIcon(QIcon(f'{self.icon_path}/pan_down.png'))
         btn_pan_down.setIconSize(QSize(icon_size, icon_size))
+        btn_pan_down.clicked.connect(lambda: self.canvas.pan_step(0, -pan_step))
+        btn_pan_down.setToolTip('Pan down')
         toolbar.addWidget(btn_pan_down)
-
         toolbar_spacer = QSpacerItem(40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum)
         toolbar.addItem(toolbar_spacer)
+        layout.addLayout(toolbar, 0, 0, 1, 2)
+        # sidebar at row 1 column 0
+        sidebar_container = QWidget()
+        sidebar_container.setFixedWidth(180)
+        sidebar = QVBoxLayout(sidebar_container)
+        sidebar.setContentsMargins(0, 0, 0, 0)
+        # layers
+        layer_group = QGroupBox('Layers')
+        self.layer_layout = QVBoxLayout(layer_group)
+        self.layer_layout.setContentsMargins(0, 0, 0, 0)
+        sidebar.addWidget(layer_group)
+        # spacer
+        sidebar_spacer1 = QSpacerItem(20, 20, QSizePolicy.Expanding, QSizePolicy.Expanding)
+        sidebar.addItem(sidebar_spacer1)
+        # view
+        view_group = QGroupBox('View')
+        view_layout = QVBoxLayout(view_group)
+        view_layout.setContentsMargins(0, 0, 0, 0)
+        self.show_rapids = QCheckBox('Rapid Segments')
+        self.show_rapids.setChecked(True)
+        self.show_rapids.stateChanged.connect(self.show_rapids_changed)
+        view_layout.addWidget(self.show_rapids)
+        self.show_lead_ins = QCheckBox('Lead-in Segments')
+        self.show_lead_ins.setChecked(True)
+        self.show_lead_ins.stateChanged.connect(self.show_lead_ins_changed)
+        view_layout.addWidget(self.show_lead_ins)
+        self.show_feeds = QCheckBox('Feed Segments')
+        self.show_feeds.setChecked(True)
+        self.show_feeds.stateChanged.connect(self.show_feeds_changed)
+        view_layout.addWidget(self.show_feeds)
+        self.show_shapes = QCheckBox('Shapes')
+        self.show_shapes.setChecked(True)
+        self.show_shapes.stateChanged.connect(self.show_shapes_changed)
+        view_layout.addWidget(self.show_shapes)
+        sidebar.addWidget(view_group)
+        # spacer
+        sidebar_spacer2 = QSpacerItem(20, 20, QSizePolicy.Expanding, QSizePolicy.Expanding)
+        sidebar.addItem(sidebar_spacer2)
 
-        main_layout.addLayout(toolbar, 0, 0, 1, 2)
-
-        # Right side: Control Panel
-        panel = QWidget()
-        panel.setFixedWidth(240)
-        panel_layout = QVBoxLayout(panel)
-
-        # --- Interaction Mode Group ---
-        mode_group = QGroupBox('Mouse Mode')
-        mode_layout = QVBoxLayout(mode_group)
-
-        self.btn_pan_mode = QPushButton('Hand Pan Mode: OFF')
-        self.btn_pan_mode.setCheckable(True)
-        self.btn_pan_mode.toggled.connect(self._toggle_pan_mode)
-        mode_layout.addWidget(self.btn_pan_mode)
-
-        hint_label = QLabel('Tip: Middle-click drag always pans.')
-        hint_label.setStyleSheet('color: gray; font-size: 11px;')
-        mode_layout.addWidget(hint_label)
-        panel_layout.addWidget(mode_group)
-
-        # --- Zoom Controls Group ---
-        zoom_group = QGroupBox('Zoom')
-        zoom_layout = QHBoxLayout(zoom_group)
-
-        btn_zoom_in = QPushButton('Zoom +')
-        btn_zoom_out = QPushButton('Zoom -')
-        btn_zoom_all = QPushButton('Zoom All')
-
-        btn_zoom_in.clicked.connect(lambda: self.canvas.zoom_by(1.25))
-        btn_zoom_out.clicked.connect(lambda: self.canvas.zoom_by(0.8))
-        btn_zoom_all.clicked.connect(self.canvas.zoom_all)
-
-        zoom_layout.addWidget(btn_zoom_in)
-        zoom_layout.addWidget(btn_zoom_out)
-        zoom_layout.addWidget(btn_zoom_all)
-        panel_layout.addWidget(zoom_group)
-
-        # --- Directional Pan Pad Group ---
-        pan_group = QGroupBox('Pan Controls')
-        pan_grid = QGridLayout(pan_group)
-        step = 50  # pixels per click
-
-        btn_up = QPushButton('▲')
-        btn_down = QPushButton('▼')
-        btn_left = QPushButton('◀')
-        btn_right = QPushButton('▶')
-
-        btn_up.clicked.connect(lambda: self.canvas.pan_by(0, step))
-        btn_down.clicked.connect(lambda: self.canvas.pan_by(0, -step))
-        btn_left.clicked.connect(lambda: self.canvas.pan_by(step, 0))
-        btn_right.clicked.connect(lambda: self.canvas.pan_by(-step, 0))
-
-        pan_grid.addWidget(btn_up, 0, 1)
-        pan_grid.addWidget(btn_left, 1, 0)
-        pan_grid.addWidget(btn_right, 1, 2)
-        pan_grid.addWidget(btn_down, 2, 1)
-        panel_layout.addWidget(pan_group)
-
-        # --- Selected Item Tags Group ---
+        # tag temp for testing
         tag_group = QGroupBox('Selected Tags')
         tag_layout = QVBoxLayout(tag_group)
+        tag_layout.setContentsMargins(0, 0, 0, 0)
         self.lbl_tags = QLabel('None selected')
         self.lbl_tags.setWordWrap(True)
         tag_layout.addWidget(self.lbl_tags)
-        panel_layout.addWidget(tag_group)
-
-        panel_layout.addStretch()
-        main_layout.addWidget(panel, 1, 0)
-        # self.setCentralWidget(central_widget)
-
+        sidebar.addWidget(tag_group)
         self.scene.selectionChanged.connect(self._update_selected_tags)
 
-    def _toggle_pan_mode(self, checked: bool):
-        self.btn_pan_mode.setText(f'Hand Pan Mode: {'ON' if checked else 'OFF'}')
-        self.canvas.set_pan_mode(checked)
+        # materials
+        material_group = QGroupBox('Material')
+        material_layout = QGridLayout(material_group)
+        material_layout.setContentsMargins(0, 0, 0, 0)
+        kerf_width_L = QLabel('Kerf Width')
+        kerf_width_L.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        material_layout.addWidget(kerf_width_L, 0, 0)
+        self.kerf_width = QDoubleSpinBox()
+        self.kerf_width.setRange(0, 5)
+        self.kerf_width.valueChanged.connect(self.kerf_changed)
+        material_layout.addWidget(self.kerf_width, 0, 1)
+        cut_speed_L = QLabel('CutSpeed')
+        cut_speed_L.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        material_layout.addWidget(cut_speed_L, 1, 0)
+        self.cut_speed = QDoubleSpinBox()
+        self.cut_speed.setRange(0, 10000)
+        material_layout.addWidget(self.cut_speed, 1, 1)
+        cut_height_L = QLabel('Cut Height')
+        cut_height_L.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        material_layout.addWidget(cut_height_L, 2, 0)
+        self.cut_height = QDoubleSpinBox()
+        self.cut_height.setRange(0, 10)
+        material_layout.addWidget(self.cut_height, 2, 1)
+        pierce_height_L = QLabel('Pierce Height')
+        pierce_height_L.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        material_layout.addWidget(pierce_height_L, 3, 0)
+        self.pierce_height = QDoubleSpinBox()
+        self.pierce_height.setRange(0, 10)
+        material_layout.addWidget(self.pierce_height, 3, 1)
+        pierce_delay_L = QLabel('Pierce Delay')
+        pierce_delay_L.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        material_layout.addWidget(pierce_delay_L, 4, 0)
+        self.pierce_delay = QDoubleSpinBox()
+        self.pierce_delay.setRange(0, 10)
+        material_layout.addWidget(self.pierce_delay, 4, 1)
+        sidebar.addWidget(material_group)
+        layout.addWidget(sidebar_container, 1, 0)
+        # statusbar at row 2 for material and status
+        statusbar_container = QWidget()
+        statusbar_container.setFixedHeight(24)
+        statusbar = QHBoxLayout(statusbar_container)
+        statusbar.setContentsMargins(0, 0, 0, 0)
+        statusbar.setSpacing(8)
+        material_L = QLabel('Material')
+        material_L.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        material_L.setFixedWidth(84)
+        statusbar.addWidget(material_L)
+        self.material_select = QComboBox()
+        self.material_select.setFixedWidth(200)
+        self.material_select.currentTextChanged.connect(self.select_material)
+        statusbar.addWidget(self.material_select)
+        statusbar_spacer = QSpacerItem(20, 20, QSizePolicy.Expanding, QSizePolicy.Expanding)
+        statusbar.addItem(statusbar_spacer)
+        layout.addWidget(statusbar_container, 2, 0, 1, 2)
 
+        # sidebar is complete, setup materials
+        if self.material_file:
+            self.load_material_file()
+        else:
+            if self.D2P.units == 'metric':
+                self.kerf_width.setValue(1)
+                self.cut_speed.setValue(1000)
+                self.cut_height.setValue(1)
+                self.pierce_height.setValue(3)
+            else:
+                self.kerf_width.setValue(0.04)
+                self.cut_speed.setValue(250)
+                self.cut_height.setValue(0.04)
+                self.pierce_height.setValue(0.12)
+            self.pierce_delay.setValue(1)
+            self.material_select.addItem('Default')
+
+    # @override
+    # def contextMenuEvent(self, a0):
+    #     print('ddd', a0, a0.pos())
+    #     if self.scene.selectedItems():
+    #         print(self.scene.selectedItems())
+
+
+    # tag testing
     def _update_selected_tags(self):
+        print('_update_selected_tags')
         selected = self.scene.selectedItems()
         if not selected:
             self.lbl_tags.setText('None selected')
             return
+        print(f'QCursor.pos(): {QCursor.pos()}')
         tags = [selected[0].data(n) for n in [0,1,2,3,4,5]]
+        # for t in tags:
+        #     print(f'tag {t} {type(t)}')
         self.lbl_tags.setText(', '.join(tags))
+        bob = self.show_popup_menu(QCursor.pos())
+        print(f'bob: {bob}')
 
-        # self.path_item = InteractivePathItem(selected[0], self.cross_marker)
+        # self.path_item = OutlineCutPath(selected[0], self.cross_marker)
         # self.scene.addItem(self.path_item)
         # print(selected[0])#.option())
         # sPen = QPen(self.selectedColor, 1)
         # # sPen.setCosmetic(True)
         # selected[0].setPen(sPen)
-        # selected[0].setSelected(False)
+        selected[0].setSelected(False)
+
+    # @override
+    # def mousePressEvent(self, event):
+    #     ''' start pan by right mouse '''
+    #     if event.button() == Qt.LeftButton:
+    #         print('left')
+    #         if self.scene.selectedItems():
+    #             self.show_option_popup(QCursor.pos())
+    #         event.accept()
+    #     else:
+    #         super().mousePressEvent(event)
+
+    def show_popup_menu(self, position):
+        reply = ''
+        menu = QMenu(self)
+        menu.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
+        menu.setWindowModality(Qt.ApplicationModal)
+
+        def answer(text):
+            nonlocal reply
+            nonlocal menu
+            reply = text
+            print(text, menu)
+            menu.close()
+
+        copy_action = QAction("Copy", self)
+        paste_action = QAction("Paste", self)
+        cancel_action = QAction('Cancel', self)
+
+        copy_action.triggered.connect(lambda: answer('Copy clicked'))
+        paste_action.triggered.connect(lambda: answer("Paste clicked"))
+        cancel_action.triggered.connect(menu.close)
+
+        menu.addAction(copy_action)
+        menu.addAction(paste_action)
+        menu.addSeparator()
+        menu.addAction(cancel_action)
+
+        menu.exec_(position)
+
+        return reply
+
+
+
+    def show_option_popup(self, event):
+        ''' display the context menu at the mouse cursor position '''
+        if self.selected_item:
+            tags = self.canvas.itemcget(self.selected_item, 'tags')
+            seq = int(tags.split()[1])
+            layer = tags.split()[5].split('_', 1)[1]
+            cut = self.D2P.sequences[layer]['cut'][int(tags.split()[1])]
+            path = self.D2P.paths[layer][self.D2P.sequences[layer]['cut'][seq]]
+            segment = int(tags.split()[2])
+            external_cut = self.D2P.sequences[layer]['external'][self.D2P.sequences[layer]['cut'][seq]]
+            radius = path.get('r', None) if isinstance(path, dict) else None
+            opts = ['', '']
+            if segment == 0:
+                return
+            elif segment == 1:
+                # add 1 so user doesn't see cut sequence #0
+                title = f'Cut: #{seq + 1}   Lead-in'
+                opt1 = 'Line \u2192 Arc' if self.D2P.sequences[layer]['lead-in'][cut]['type'] == 'line' else 'Arc \u2192 Line'
+                if radius and radius < self.D2P.small_hole / 2 and not external_cut:
+                    opts = ['Change Length']
+                else:
+                    opts = [opt1, 'Change Length']
+                    if self.D2P.sequences[layer]['lead-in'][cut]['type'] == 'line':
+                        opts.append('Change Angle')
+                color = self.leadin_color
+            else:
+                # add 1 so user doesn't see cut sequence #0
+                # title = f'Cut: #{seq + 1}   Segment: #{segment + 1}'
+                title = f'Cut: #{seq + 1}   Segment: #{segment}'
+                opt1 = 'External \u2192 Internal' if self.D2P.sequences[layer]['external'][cut] else 'Internal \u2192 External'
+                if isinstance(path, dict): # circles
+                    opts = [opt1, 'Change Cut Sequence', 'Change Start Angle']
+                elif path.is_closed:
+                    opts = [opt1, 'Change Cut Sequence', 'Set As Start Segment']
+                else:
+                    opts = ['Change Cut Sequence']
+                color = self.cut_color_external if external_cut else self.cut_color_internal
+            opts.append('Cancel')
+            modal = PopupMenu(self, title, opts, event, color)
+            self.wait_window(modal)
+            match modal.result:
+                case 'Line \u2192 Arc' | 'Arc \u2192 Line':
+                    self.selected_item = ''
+                    self.D2P.toggle_lead(layer, cut)
+                    self.error_check()
+                    self.do_plot()
+                case 'Change Length':
+                    self.color_selected(self.canvas.type(self.selected_item), False)
+                    self.selected_item = ''
+                    self.after(100, self.lead_in_length, cut, radius, external_cut, layer)
+                case 'Change Angle':
+                    self.color_selected(self.canvas.type(self.selected_item), False)
+                    self.selected_item = ''
+                    self.after(100, self.lead_in_angle, cut, layer)
+                case 'Internal \u2192 External' | 'External \u2192 Internal':
+                    self.selected_item = ''
+                    self.D2P.toggle_side(layer, cut)
+                    self.error_check()
+                    self.do_plot()
+                case 'Change Cut Sequence':
+                    self.color_selected(self.canvas.type(self.selected_item), False)
+                    self.selected_item = ''
+                    self.after(100, self.change_sequence, cut, seq, layer)
+                case 'Set As Start Segment':
+                    self.selected_item = ''
+                    self.D2P.change_start_segment(layer, cut, segment)
+                    self.error_check()
+                    self.do_plot()
+                case 'Change Start Angle':
+                    self.color_selected(self.canvas.type(self.selected_item), False)
+                    self.selected_item = ''
+                    self.after(100, self.change_start_angle, cut, seq, layer)
+                case _:
+                    pass
+            if self.selected_item:
+                self.color_selected(self.canvas.type(self.selected_item), False)
+                self.selected_item = ''
+
+
 
 # if __name__ == '__main__':
 #     app = QApplication(sys.argv)
