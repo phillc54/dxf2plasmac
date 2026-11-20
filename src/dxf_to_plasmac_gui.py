@@ -36,6 +36,7 @@ from PyQt5.QtWidgets import (
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QMenu,
     QMessageBox,
@@ -44,6 +45,7 @@ from PyQt5.QtWidgets import (
     QToolButton,
     QVBoxLayout,
     QWidget,
+    QWidgetAction,
 )
 
 from .dxf_to_plasmac import dxf2PlasmaC
@@ -235,6 +237,8 @@ class dxfGui(QFrame):
         self.invalid_color  = Qt.magenta
         self.selectedColor = Qt.yellow
 
+        self.selected_item = ''
+
         # self._populate_sample_items()
         self.icon_path = get_asset_path('assets/icons')
 
@@ -336,8 +340,8 @@ class dxfGui(QFrame):
                     x2 = line['end'][0]
                     y2 = line['end'][1] * -1
 
-                    if segment < 4 or segment > len(points[layer][point]) - 3:
-                        print(f'{mode} {point} {segment}:  {x1,y1}  {x2,y2}')
+#                    if segment < 4 or segment > len(points[layer][point]) - 3:
+#                        print(f'{mode} {point} {segment}:  {x1,y1}  {x2,y2}')
 
                     color = (self.shape_color if mode == 'shape' else
                              self.rapid_color if segment == 0 else
@@ -782,27 +786,65 @@ class dxfGui(QFrame):
             self.pierce_delay.setValue(1)
             self.material_select.addItem('Default')
 
-    # @override
-    # def contextMenuEvent(self, a0):
-    #     print('ddd', a0, a0.pos())
-    #     if self.scene.selectedItems():
-    #         print(self.scene.selectedItems())
+    def change_sequence(self, cut, seq, layer):
+        # add 1 here so user doesn't see cut sequence #0
+        mini = min(self.D2P.sequences[layer]['cut']) + 1
+        maxi = max(self.D2P.sequences[layer]['cut']) + 1
+        new_seq, ok = QInputDialog.getInt(self,
+                'Cut Sequence',
+                f'Select a new cut position\nfrom {mini} to {maxi}',
+                seq + 1,
+                mini,
+                maxi,
+                1)
+        if ok and new_seq != seq + 1:
+            self.D2P.change_cut_sequence(layer, cut, new_seq)
+            self.error_check()
+            self.do_plot()
+
+    def change_start_segment(self, layer, cut, segment, global_pos):
+        #NOTE: Y AXIS MIS INVERTED
+        pos = self.get_path_coord_from_global(global_pos)
+        print(f'pos: {pos}')
+        for p in self.D2P.cut_points[layer][cut]:
+            print(self.D2P.cut_points[layer][cut][p])
+        # self.sequences[layer]['start'][cut] = segment
+        # self.get_points('cut')
+
+    def get_path_coord_from_global(self, global_pos) -> QPointF:
+        view = self.canvas
+        path = self.selected_item
+        # 1. Global (Screen) -> QGraphicsView viewport widget coordinates
+        viewport_pos = view.viewport().mapFromGlobal(global_pos)
+
+        # 2. Viewport -> QGraphicsScene coordinates (accounts for zoom/scroll)
+        scene_pos = view.mapToScene(viewport_pos)
+
+        # 3. Scene -> QGraphicsPathItem local coordinates (accounts for item pos/rotation/scale)
+        path_pos = path.mapFromScene(scene_pos)
+
+        return path_pos
+
 
 
     # tag testing
     def _update_selected_tags(self):
-        print('_update_selected_tags')
-        selected = self.scene.selectedItems()
-        if not selected:
-            self.lbl_tags.setText('None selected')
-            return
-        print(f'QCursor.pos(): {QCursor.pos()}')
-        tags = [selected[0].data(n) for n in [0,1,2,3,4,5]]
-        # for t in tags:
-        #     print(f'tag {t} {type(t)}')
-        self.lbl_tags.setText(', '.join(tags))
-        bob = self.show_popup_menu(QCursor.pos())
-        print(f'bob: {bob}')
+        # print('_update_selected_tags')
+        # selected = self.scene.selectedItems()
+        # if not selected:
+        #     self.lbl_tags.setText('None selected')
+        #     return
+        # print(f'QCursor.pos(): {QCursor.pos()}')
+        # tags = [selected[0].data(n) for n in [0,1,2,3,4,5]]
+        # # for t in tags:
+        # #     print(f'tag {t} {type(t)}')
+        # self.lbl_tags.setText(', '.join(tags))
+        # # bob = self.show_popup_menu(QCursor.pos())
+        # # print(f'bob: {bob}')
+
+        if self.scene.selectedItems():
+            self.selected_item = self.scene.selectedItems()[0]
+            self.show_option_popup(QCursor.pos())
 
         # self.path_item = OutlineCutPath(selected[0], self.cross_marker)
         # self.scene.addItem(self.path_item)
@@ -810,129 +852,135 @@ class dxfGui(QFrame):
         # sPen = QPen(self.selectedColor, 1)
         # # sPen.setCosmetic(True)
         # selected[0].setPen(sPen)
-        selected[0].setSelected(False)
+        # selected[0].setSelected(False)
+        self.selected_item = ''
 
-    # @override
-    # def mousePressEvent(self, event):
-    #     ''' start pan by right mouse '''
-    #     if event.button() == Qt.LeftButton:
-    #         print('left')
-    #         if self.scene.selectedItems():
-    #             self.show_option_popup(QCursor.pos())
-    #         event.accept()
-    #     else:
-    #         super().mousePressEvent(event)
-
-    def show_popup_menu(self, position):
-        reply = ''
+    def show_popup_menu(self, position, title, options) ->str:
+        # print(f'options: {options}')
+        option = ''
         menu = QMenu(self)
         menu.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
         menu.setWindowModality(Qt.ApplicationModal)
 
         def answer(text):
-            nonlocal reply
+            nonlocal option
             nonlocal menu
-            reply = text
-            print(text, menu)
+            option = text
+            # print(text, menu)
             menu.close()
 
-        copy_action = QAction("Copy", self)
-        paste_action = QAction("Paste", self)
-        cancel_action = QAction('Cancel', self)
-
-        copy_action.triggered.connect(lambda: answer('Copy clicked'))
-        paste_action.triggered.connect(lambda: answer("Paste clicked"))
-        cancel_action.triggered.connect(menu.close)
-
-        menu.addAction(copy_action)
-        menu.addAction(paste_action)
+        title_label = QLabel(title)
+        title_label.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+        title_action = QWidgetAction(menu)
+        title_action.setDefaultWidget(title_label)
+        menu.addAction(title_action)
         menu.addSeparator()
-        menu.addAction(cancel_action)
-
+        for opt in options:
+            if opt:
+                action = QAction(opt, self)
+                action.triggered.connect(lambda checked=False, a=opt: answer(a))
+                if opt == 'Cancel':
+                    menu.addSeparator()
+                menu.addAction(action)
         menu.exec_(position)
+        return option
 
-        return reply
-
-
-
-    def show_option_popup(self, event):
+    def show_option_popup(self, position):
         ''' display the context menu at the mouse cursor position '''
         if self.selected_item:
-            tags = self.canvas.itemcget(self.selected_item, 'tags')
-            seq = int(tags.split()[1])
-            layer = tags.split()[5].split('_', 1)[1]
-            cut = self.D2P.sequences[layer]['cut'][int(tags.split()[1])]
+            seq = int(self.selected_item.data(TAG_SEQUENCE))
+            layer = self.selected_item.data(TAG_LAYER)
+            cut = self.D2P.sequences[layer]['cut'][seq]
             path = self.D2P.paths[layer][self.D2P.sequences[layer]['cut'][seq]]
-            segment = int(tags.split()[2])
+            # print(f'path: {path}')
+            segment = self.selected_item.data(TAG_SEGMENT)
             external_cut = self.D2P.sequences[layer]['external'][self.D2P.sequences[layer]['cut'][seq]]
             radius = path.get('r', None) if isinstance(path, dict) else None
-            opts = ['', '']
+            # opts = ['', '']
+            opts = []
             if segment == 0:
                 return
-            elif segment == 1:
-                # add 1 so user doesn't see cut sequence #0
-                title = f'Cut: #{seq + 1}   Lead-in'
-                opt1 = 'Line \u2192 Arc' if self.D2P.sequences[layer]['lead-in'][cut]['type'] == 'line' else 'Arc \u2192 Line'
-                if radius and radius < self.D2P.small_hole / 2 and not external_cut:
-                    opts = ['Change Length']
-                else:
-                    opts = [opt1, 'Change Length']
-                    if self.D2P.sequences[layer]['lead-in'][cut]['type'] == 'line':
-                        opts.append('Change Angle')
-                color = self.leadin_color
-            else:
-                # add 1 so user doesn't see cut sequence #0
-                # title = f'Cut: #{seq + 1}   Segment: #{segment + 1}'
-                title = f'Cut: #{seq + 1}   Segment: #{segment}'
-                opt1 = 'External \u2192 Internal' if self.D2P.sequences[layer]['external'][cut] else 'Internal \u2192 External'
-                if isinstance(path, dict): # circles
-                    opts = [opt1, 'Change Cut Sequence', 'Change Start Angle']
-                elif path.is_closed:
-                    opts = [opt1, 'Change Cut Sequence', 'Set As Start Segment']
-                else:
-                    opts = ['Change Cut Sequence']
-                color = self.cut_color_external if external_cut else self.cut_color_internal
+            title = f'Cut: #{seq + 1}'
+            opts.append('Change Cut Sequence')
+            if isinstance(path, dict) or path.is_closed:
+                opts.append('External \u2192 Internal' if self.D2P.sequences[layer]['external'][cut] else 'Internal \u2192 External')
+                opts.append('Set As Start Point')
+                if radius and radius > self.D2P.small_hole / 2 or external_cut:
+                    opts.append('Line \u2192 Arc' if self.D2P.sequences[layer]['lead-in'][cut]['type'] == 'line' else 'Arc \u2192 Line')
+                opts.append('Change Lead-in Length')
+                if self.D2P.sequences[layer]['lead-in'][cut]['type'] == 'line':
+                    opts.append('Change Lead-in Angle')
             opts.append('Cancel')
-            modal = PopupMenu(self, title, opts, event, color)
-            self.wait_window(modal)
-            match modal.result:
-                case 'Line \u2192 Arc' | 'Arc \u2192 Line':
+            option = self.show_popup_menu(position, title, opts)#, color)
+            print(f'option; {option}')
+
+            match option:
+                case 'Change Cut Sequence':
+                    # self.color_selected(self.canvas.type(self.selected_item), False)
                     self.selected_item = ''
-                    self.D2P.toggle_lead(layer, cut)
-                    self.error_check()
-                    self.do_plot()
-                case 'Change Length':
-                    self.color_selected(self.canvas.type(self.selected_item), False)
-                    self.selected_item = ''
-                    self.after(100, self.lead_in_length, cut, radius, external_cut, layer)
-                case 'Change Angle':
-                    self.color_selected(self.canvas.type(self.selected_item), False)
-                    self.selected_item = ''
-                    self.after(100, self.lead_in_angle, cut, layer)
+                    # self.change_sequence(cut, seq, layer)
+                    QTimer.singleShot(100, lambda: self.change_sequence(cut, seq, layer))
+
                 case 'Internal \u2192 External' | 'External \u2192 Internal':
                     self.selected_item = ''
                     self.D2P.toggle_side(layer, cut)
                     self.error_check()
-                    self.do_plot()
-                case 'Change Cut Sequence':
-                    self.color_selected(self.canvas.type(self.selected_item), False)
-                    self.selected_item = ''
-                    self.after(100, self.change_sequence, cut, seq, layer)
-                case 'Set As Start Segment':
-                    self.selected_item = ''
-                    self.D2P.change_start_segment(layer, cut, segment)
+                    QTimer.singleShot(100, self.do_plot)
+
+                case 'Set As Start Point':
+                    print(0, layer, cut, segment)
+                    print(f'position: {position} {position.x()} {position.y()}')
+                    # self.selected_item = ''
+                    # self.D2P.change_start_segment(layer, cut, segment, position.x(), position.y())
+                    self.change_start_segment(layer, cut, segment, position)
                     self.error_check()
-                    self.do_plot()
-                case 'Change Start Angle':
-                    self.color_selected(self.canvas.type(self.selected_item), False)
+                    QTimer.singleShot(100, self.do_plot)
                     self.selected_item = ''
-                    self.after(100, self.change_start_angle, cut, seq, layer)
+
+#                 case 'Line \u2192 Arc' | 'Arc \u2192 Line':
+#                     self.selected_item = ''
+#                     self.D2P.toggle_lead(layer, cut)
+#                     self.error_check()
+#                     self.do_plot()
+#                 case 'Change Lead-in Length':
+#                     self.color_selected(self.canvas.type(self.selected_item), False)
+#                     self.selected_item = ''
+#                     self.after(100, self.lead_in_length, cut, radius, external_cut, layer)
+#                 case 'Change Lead-in Angle':
+#                     self.color_selected(self.canvas.type(self.selected_item), False)
+#                     self.selected_item = ''
+#                     self.after(100, self.lead_in_angle, cut, layer)
+#                 case 'Change Start Angle':
+#                     self.color_selected(self.canvas.type(self.selected_item), False)
+#                     self.selected_item = ''
+#                     self.after(100, self.change_start_angle, cut, seq, layer)
                 case _:
                     pass
-            if self.selected_item:
-                self.color_selected(self.canvas.type(self.selected_item), False)
-                self.selected_item = ''
-
+#             if self.selected_item:
+#                 self.color_selected(self.canvas.type(self.selected_item), False)
+#                 self.selected_item = ''
+#
+# class PopupMenu(CTk.CTkToplevel):
+#     def __init__(self, master, title, options, event, color):
+#         super().__init__(master)
+#         self.overrideredirect(True)
+#         self.transient(master)
+#         self.grab_set()
+#         self.result = None
+#         label = CTk.CTkLabel(self, text=title, text_color=color)
+#         label.pack(padx=4, pady=4)
+#         for opt in options:
+#             btn = CTk.CTkButton(self, text=opt, command=lambda o=opt: self._on_button_click(o))
+#             btn.pack(padx=4, pady=4, expand=True, fill='x')
+#         x, y = get_popup_point(master, self, (event.x_root, event.y_root))
+#         self.wm_geometry(f'+{x}+{y:.0f}')
+#         # this seems to only work for macos
+#         self.attributes('-transparent', True)
+#         self.configure(fg_color='systemTransparent')
+#
+#     def _on_button_click(self, option):
+#         self.result = option
+#         self.destroy()
 
 
 # if __name__ == '__main__':
