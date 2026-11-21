@@ -444,40 +444,29 @@ class dxfGui(QFrame):
                     item.setData(TAG_TYPE, seg_type)
                     item.setData(TAG_COLOR, QColor(color).name())
                 seq += 1
-        if mode == 'cut':
-            if not self.show_rapids.isChecked():
-                self.hide_paths_by_tag(TAG_TYPE, 'rapid', False)
-            for layer in self.D2P.ignored:
-                self.hide_paths_by_tag(TAG_LAYER, layer, False)
+        self.hide_paths_by_tag()
 
-    def hide_paths_by_tag(self, tag, target, visible):
+    def hide_paths_by_tag(self):
         ''' show/hide paths by tag '''
-        print(f'HIDE: tag:{tag}   target:{target}   vis:{visible}')
-        if not self.scene:
-            return
+#FIXME  if this causes performance hit on large files it may be worthwhile making a tag dict
+        layer_boxes = self.layer_group.findChildren(QCheckBox)
+        hide_layers = [cb.text() for cb in layer_boxes if not cb.isChecked()]
+        hide_types = []
+        if not self.show_rapids.isChecked(): hide_types.append('rapid')
+        if not self.show_lead_ins.isChecked(): hide_types.append('lead-in')
+        if not self.show_feeds.isChecked(): hide_types.append('feed')
+        if not self.show_shapes.isChecked(): hide_types.append('shape')
         for item in self.scene.items():
-            if isinstance(item, QGraphicsPathItem) and item.data(tag) == target:
-                    item.setVisible(visible)
-
-    def show_rapids_changed(self, state):
-        ''' show/hide rapid moves '''
-        self.hide_paths_by_tag(TAG_TYPE, 'rapid', state)
-
-    def show_lead_ins_changed(self, state):
-        ''' show/hide lead-ins '''
-        self.hide_paths_by_tag(TAG_TYPE, 'lead-in', state)
-
-    def show_feeds_changed(self, state):
-        ''' show/hide cut moves '''
-        self.hide_paths_by_tag(TAG_TYPE, 'feed', state)
-
-    def show_shapes_changed(self, state):
-        ''' show/hide original shapes '''
-        self.hide_paths_by_tag(TAG_MODE, 'shape', state)
+            item.setVisible(True)
+            if isinstance(item, QGraphicsPathItem):
+                if hide_layers and item.data(TAG_LAYER) in hide_layers:
+                        item.setVisible(False)
+                if hide_types and item.data(TAG_TYPE) in hide_types:
+                        item.setVisible(False)
 
     def toggle_layer_visibility(self, state, layer):
         ''' show/hide layers by name '''
-        self.hide_paths_by_tag(TAG_LAYER, layer, state)
+        self.hide_paths_by_tag()
         if state:
             self.D2P.ignored.remove(layer)
         else:
@@ -828,10 +817,10 @@ class dxfGui(QFrame):
         sidebar = QVBoxLayout(sidebar_container)
         sidebar.setContentsMargins(0, 0, 0, 0)
         # layers
-        layer_group = QGroupBox('Layers')
-        self.layer_layout = QVBoxLayout(layer_group)
+        self.layer_group = QGroupBox('Layers')
+        self.layer_layout = QVBoxLayout(self.layer_group)
         self.layer_layout.setContentsMargins(0, 0, 0, 0)
-        sidebar.addWidget(layer_group)
+        sidebar.addWidget(self.layer_group)
         # spacer
         sidebar_spacer1 = QSpacerItem(20, 20, QSizePolicy.Expanding, QSizePolicy.Expanding)
         sidebar.addItem(sidebar_spacer1)
@@ -841,19 +830,19 @@ class dxfGui(QFrame):
         view_layout.setContentsMargins(0, 0, 0, 0)
         self.show_rapids = QCheckBox('Rapid Segments')
         self.show_rapids.setChecked(True)
-        self.show_rapids.stateChanged.connect(self.show_rapids_changed)
+        self.show_rapids.stateChanged.connect(self.hide_paths_by_tag)
         view_layout.addWidget(self.show_rapids)
         self.show_lead_ins = QCheckBox('Lead-in Segments')
         self.show_lead_ins.setChecked(True)
-        self.show_lead_ins.stateChanged.connect(self.show_lead_ins_changed)
+        self.show_lead_ins.stateChanged.connect(self.hide_paths_by_tag)
         view_layout.addWidget(self.show_lead_ins)
         self.show_feeds = QCheckBox('Feed Segments')
         self.show_feeds.setChecked(True)
-        self.show_feeds.stateChanged.connect(self.show_feeds_changed)
+        self.show_feeds.stateChanged.connect(self.hide_paths_by_tag)
         view_layout.addWidget(self.show_feeds)
         self.show_shapes = QCheckBox('Shapes')
         self.show_shapes.setChecked(True)
-        self.show_shapes.stateChanged.connect(self.show_shapes_changed)
+        self.show_shapes.stateChanged.connect(self.hide_paths_by_tag)
         view_layout.addWidget(self.show_shapes)
         sidebar.addWidget(view_group)
         # spacer
