@@ -111,6 +111,7 @@ class dxf2PlasmaC:
                 self.sequences = pickle.load(f)
                 self.ignored = pickle.load(f)
                 self.layers = pickle.load(f)
+                self.size = pickle.load(f)
         except Exception as e:
             self.error = f'{type(e).__name__} opening project {Path(file).name}\n{e}'
             return
@@ -130,6 +131,7 @@ class dxf2PlasmaC:
                 pickle.dump(self.sequences, f)
                 pickle.dump(self.ignored, f)
                 pickle.dump(self.layers, f)
+                pickle.dump(self.size, f)
         except Exception as e:
             self.error = f'{type(e).__name__} saving project {Path().name}\n{e}'
 
@@ -339,14 +341,17 @@ class dxf2PlasmaC:
         # circles
         if isinstance(path, dict):
             # circle center point
-            xc = round(path['cp'][0], self.precision)
-            yc = round(path['cp'][1], self.precision)
+            # xc = round(path['cp'][0], self.precision)
+            # yc = round(path['cp'][1], self.precision)
+            xc = path['cp'][0]
+            yc = path['cp'][1]
             # cut path
             if cut:
                     # base angle for lead-ins
                 ang = self.sequences[layer]['start'][path_num]
                 # set radius to cut path rather than shape
-                r = round(path['r'], self.precision) + offset
+                # r = round(path['r'], self.precision) + offset
+                r = path['r'] + offset
                 # lead-in cannot be greater than radius
                 ll = min(l_length, r)
                 # external is clockwise
@@ -528,19 +533,26 @@ class dxf2PlasmaC:
             for n, s in enumerate(lst):
                 if segments[s]:
                     points_dict[n] = {'seg': s,
-                                        'start': (round(segments[s][0][0], self.precision), round(segments[s][0][1], self.precision)),
-                                        'end': (round(segments[s][1][0], self.precision), round(segments[s][1][1], self.precision))}
+                                        # 'start': (round(segments[s][0][0], self.precision), round(segments[s][0][1], self.precision)),
+                                        # 'end': (round(segments[s][1][0], self.precision), round(segments[s][1][1], self.precision))}
+                                        'start': (segments[s][0][0], segments[s][0][1]),
+                                        'end': (segments[s][1][0], segments[s][1][1])}
                     if cut and s == 1 and arc_lead:
-                        points_dict[n]['cp'] = (round(lxc, self.precision), round(lyc, self.precision))
-                        points_dict[n]['r'] = round(lr, self.precision)
-                        points_dict[n]['sa'] = round(lsa, self.precision)
+                        # points_dict[n]['cp'] = (round(lxc, self.precision), round(lyc, self.precision))
+                        # points_dict[n]['r'] = round(lr, self.precision)
+                        # points_dict[n]['sa'] = round(lsa, self.precision)
+                        points_dict[n]['cp'] = (lxc, lyc, self.precision)
+                        points_dict[n]['r'] = lr
+                        points_dict[n]['sa'] = lsa
                         points_dict[n]['e'] = 90.0
                         points_dict[n]['g'] = 3
                 else:
                     points_dict[n] = {'seg': s}
         last_cut = points_dict[len(points_dict)-1]['end']
-        last_cut = (round(last_cut[0], self.precision),
-                            round(last_cut[1], self.precision))
+        # last_cut = (round(last_cut[0], self.precision),
+        #                     round(last_cut[1], self.precision))
+        last_cut = (last_cut[0],
+                            last_cut[1])
         return points_dict, last_cut, warning
 
 
