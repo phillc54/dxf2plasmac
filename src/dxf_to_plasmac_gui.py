@@ -328,9 +328,6 @@ class dxfGui(QFrame):
         #         self.canvas.scale('all', 0, 0, self.canvas_last['scale'], self.canvas_last['scale'])
         #         self.canvas.move('all', self.canvas_last['x'], self.canvas_last['y'])
 
-    # def paint(self, painter, option, _a):
-    #     option.state = QStyle.State_None
-    #     return super(MyClassName, self).paint(painter,option)
 
     def plot(self, points, mode:str='shape', clear:bool=False):
         ''' plot a shape or a cut '''
@@ -495,6 +492,7 @@ class dxfGui(QFrame):
             if layer not in self.D2P.ignored:
                 check.setChecked(True)
             check.stateChanged.connect(lambda s, l=layer: self.toggle_layer_visibility(s, l))
+            check.setToolTip(f'Disable layer {layer}')
             self.layer_layout.addWidget(check)
 
     def clear_layout(self, layout):
@@ -658,9 +656,9 @@ class dxfGui(QFrame):
                 opts.append('Set As Start Point')
                 if radius and radius > self.D2P.small_hole / 2 or external_cut or not radius:
                     opts.append('Line \u2192 Arc' if self.D2P.sequences[layer]['lead-in'][cut]['type'] == 'line' else 'Arc \u2192 Line')
-                opts.append('Change Lead-in Length')
-                if self.D2P.sequences[layer]['lead-in'][cut]['type'] == 'line':
-                    opts.append('Change Lead-in Angle')
+                    if self.D2P.sequences[layer]['lead-in'][cut]['type'] == 'line':
+                        opts.append('Change Lead-in Angle')
+                opts.insert(-1, 'Change Lead-in Length')
             opts.append('Cancel')
             option = self.menu_popup(position, title, opts)#, color)
             valid = True
@@ -818,6 +816,7 @@ class dxfGui(QFrame):
         sidebar.setContentsMargins(0, 0, 0, 0)
         # layers
         self.layer_group = QGroupBox('Layers')
+        self.layer_group.setToolTip('Layer Inhibit\nUnchecked layers will not be sent to G-code or the preview')
         self.layer_layout = QVBoxLayout(self.layer_group)
         self.layer_layout.setContentsMargins(0, 0, 0, 0)
         sidebar.addWidget(self.layer_group)
@@ -826,23 +825,28 @@ class dxfGui(QFrame):
         sidebar.addItem(sidebar_spacer1)
         # view
         view_group = QGroupBox('View')
+        view_group.setToolTip('View Inhibit\nUnchecked paths are only hidden in the preview')
         view_layout = QVBoxLayout(view_group)
         view_layout.setContentsMargins(0, 0, 0, 0)
         self.show_rapids = QCheckBox('Rapid Segments')
         self.show_rapids.setChecked(True)
         self.show_rapids.stateChanged.connect(self.hide_paths_by_tag)
+        self.show_rapids.setToolTip('Hide rapid paths')
         view_layout.addWidget(self.show_rapids)
         self.show_lead_ins = QCheckBox('Lead-in Segments')
         self.show_lead_ins.setChecked(True)
         self.show_lead_ins.stateChanged.connect(self.hide_paths_by_tag)
+        self.show_lead_ins.setToolTip('Hide lead_in paths')
         view_layout.addWidget(self.show_lead_ins)
         self.show_feeds = QCheckBox('Feed Segments')
         self.show_feeds.setChecked(True)
         self.show_feeds.stateChanged.connect(self.hide_paths_by_tag)
+        self.show_feeds.setToolTip('Hide feeds paths')
         view_layout.addWidget(self.show_feeds)
         self.show_shapes = QCheckBox('Shapes')
         self.show_shapes.setChecked(True)
         self.show_shapes.stateChanged.connect(self.hide_paths_by_tag)
+        self.show_shapes.setToolTip('Hide original shapes paths')
         view_layout.addWidget(self.show_shapes)
         sidebar.addWidget(view_group)
         # spacer

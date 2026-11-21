@@ -26,14 +26,14 @@ class MainWindow(QMainWindow):
 
         self.dxf_gui.D2P.material_file = '/Volumes/CaseSensitiveHD/git/dxf2plasmac/testing/test_material.cfg'
         self.dxf_gui.D2P.units = 'metric'
-        self.dxf_gui.D2P.lead_type = 'line'
+        self.dxf_gui.D2P.lead_type = 'arc'
         self.dxf_gui.D2P.lead_length = 3.0
         self.dxf_gui.D2P.last_cut = (0.0, 0.0)
         self.dxf_gui.D2P.flattening_distance = 0.025
         self.dxf_gui.D2P.gap_tolerance = 0.001
         self.dxf_gui.D2P.lead_angle = 45
         self.dxf_gui.D2P.precision = 2
-        self.dxf_gui.D2P.small_hole = 0
+        self.dxf_gui.D2P.small_hole = 32
         self.dxf_gui.shape_color = Qt.black
         self.dxf_gui.rapid_color = Qt.darkYellow
         self.dxf_gui.leadin_color = Qt.cyan
