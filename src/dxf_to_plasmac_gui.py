@@ -227,7 +227,7 @@ class dxfGui(QFrame):
         self.new_file = ''
 
         self.material_file = material_file
-        print('material file =', self.material_file)
+        # print('material file =', self.material_file)
 
         self.shape_color = Qt.black
         self.rapid_color = Qt.blue
@@ -292,8 +292,8 @@ class dxfGui(QFrame):
 
     def plot(self, points, mode:str='shape', clear:bool=False):
         ''' plot a shape or a cut '''
-#FIXME        # the only difference between metric and inch are the origin pointer lengths
-        spot = 2 if self.D2P.units == 'metric' else 0.02
+#FIXME        # the only difference between metric and inch is the origin pointer size
+        spot = 1 if self.D2P.units == 'metric' else 0.08
         seq = 0
         # keep pyright quiet
         path = ''
@@ -321,8 +321,6 @@ class dxfGui(QFrame):
             self.scene.addItem(outer)
         # iterate through layers
         for layer in self.D2P.layers:
-            if layer in self.D2P.ignored:
-                continue
             # iterate through paths in cut sequence
             for point in self.D2P.sequences[layer]['cut']:
                  # shape was too small to offset
@@ -339,10 +337,6 @@ class dxfGui(QFrame):
                     y1 = line['start'][1] * -1
                     x2 = line['end'][0]
                     y2 = line['end'][1] * -1
-
-#                    if segment < 4 or segment > len(points[layer][point]) - 3:
-#                        print(f'{mode} {point} {segment}:  {x1,y1}  {x2,y2}')
-
                     color = (self.shape_color if mode == 'shape' else
                              self.rapid_color if segment == 0 else
                              self.leadin_color if segment == 1 else
@@ -357,6 +351,20 @@ class dxfGui(QFrame):
                         path = QPainterPath()
                         path.moveTo(x1, y1)
                         path.lineTo(x2, y2)
+                        item = self.scene.addPath(path, pen)
+                        # add an arrow to center point
+                        xc = (x1 + x2) / 2
+                        yc = (y1 + y2) / 2
+                        ang = math.atan2(y2-y1, x2-x1)
+                        l = 2 if self.D2P.units == 'metric' else 0.08
+                        xs = xc + l * math.cos(ang + math.radians(150))
+                        ys = yc + l * math.sin(ang + math.radians(150))
+                        xe = xc + l * math.cos(ang + math.radians(210))
+                        ye = yc + l * math.sin(ang + math.radians(210))
+                        path = QPainterPath()
+                        path.moveTo(xs, ys)
+                        path.lineTo(xc, yc)
+                        path.lineTo(xe, ye)
                         item = self.scene.addPath(path, pen)
                     # lead-in segment
                     elif segment == 1:
@@ -387,7 +395,7 @@ class dxfGui(QFrame):
                             self.scene.addItem(item)
                     # shape and cut segments
                     elif segment == 2:
-                        # circle, there are no mor segments
+                        # circle, there are no more segments
                         if 'cp' in line:
                             x = line['cp'][0]
                             y = line['cp'][1] * -1
@@ -403,15 +411,13 @@ class dxfGui(QFrame):
                         else:
                             path = QPainterPath()
                             path.moveTo(x1, y1)
-                            # print(f'{segment}:{x1,y1}')                    # line end segments
-                            # print(f'{segment}:{x2,y2}')                    # line end segments
-                    # else:
-                    elif segment < len(points[layer][point])-2:
+                            path.lineTo(x2, y2)
+                    # remaingin segments except last
+                    elif segment < len(points[layer][point])-1:
                         path.lineTo(x2, y2)
                     # last line segment
-                    # if segment == len(points[layer][point])-2 and segment > 3:
                     if segment == len(points[layer][point])-1 and segment > 3:
-                        # print('last point', segment)
+                        path.lineTo(x2, y2)
                         item = OutlineCutPath(path, self.cross_marker) if mode == 'cut' else OutlinePath(path)
                         item.setPen(pen)
                         if mode == 'cut':
@@ -425,27 +431,17 @@ class dxfGui(QFrame):
                         item.setData(TAG_SEGMENT, str(line['seg']))
                         item.setData(TAG_TYPE, seg_type)
                         item.setData(TAG_COLOR, QColor(color).name())
-
-
-#FIXME - fix the last half segment
-
-#                         # if segment == 0:
-#                         #     midx = (x1 + x2) / 2
-#                         #     midy = (y1 + y2) / 2
-#                         #     self.canvas.create_line(x1, y1, midx, midy, width=1, fill=fill, tags=tags, state=state, dash=(5, 5), arrow='last')
-#                         #     self.canvas.create_line(midx, midy, x2, y2, width=1, fill=fill, tags=tags, state=state, dash=(5, 5))
-#                         # else:
-#                         #     self.canvas.create_line(x1, y1, x2, y2, width=1, fill=fill, tags=tags, state=state)
-
                 seq += 1
-        if not self.show_rapids.isChecked():
-            self.hide_paths_by_tag(4, 'rapid', False)
+        if mode == 'cut':
+            if not self.show_rapids.isChecked():
+                self.hide_paths_by_tag(TAG_TYPE, 'rapid', False)
+            for layer in self.D2P.ignored:
+                self.hide_paths_by_tag(TAG_LAYER, layer, False)
 
     def hide_paths_by_tag(self, tag, target, visible):
         ''' show/hide paths by tag '''
         if not self.scene:
             return
-        print(f'hide:  tag:{tag}  target:{target}  visible:{visible}')
         for item in self.scene.items():
             if isinstance(item, QGraphicsPathItem) and item.data(tag) == target:
                     item.setVisible(visible)
@@ -466,9 +462,13 @@ class dxfGui(QFrame):
         ''' show/hide original shapes '''
         self.hide_paths_by_tag(TAG_MODE, 'shape', state)
 
-    def show_layers_changed(self, state, layer):
+    def toggle_layer_visibility(self, state, layer):
         ''' show/hide layers by name '''
         self.hide_paths_by_tag(TAG_LAYER, layer, state)
+        if state:
+            self.D2P.ignored.remove(layer)
+        else:
+            self.D2P.ignored.append(layer)
 
     def create_marker_cross(self, size=2, color=Qt.red):
         ''' create a marker cross '''
@@ -492,7 +492,7 @@ class dxfGui(QFrame):
             check = QCheckBox(layer)
             if layer not in self.D2P.ignored:
                 check.setChecked(True)
-            check.stateChanged.connect(lambda s, l=layer: self.show_layers_changed(s, l))
+            check.stateChanged.connect(lambda s, l=layer: self.toggle_layer_visibility(s, l))
             self.layer_layout.addWidget(check)
 
     def clear_layout(self, layout):
@@ -805,10 +805,10 @@ class dxfGui(QFrame):
     def change_start_segment(self, layer, cut, segment, global_pos):
         #NOTE: Y AXIS MIS INVERTED
         pos = self.get_path_coord_from_global(global_pos)
-        print(f'pos: {pos}')
-        for p in self.D2P.cut_points[layer][cut]:
-            print(self.D2P.cut_points[layer][cut][p])
-        # self.sequences[layer]['start'][cut] = segment
+        # print(f'pos: {pos}')
+        # for p in self.D2P.cut_points[layer][cut]:
+        #     print(self.D2P.cut_points[layer][cut][p])
+        # # self.sequences[layer]['start'][cut] = segment
         # self.get_points('cut')
 
     def get_path_coord_from_global(self, global_pos) -> QPointF:
@@ -912,7 +912,7 @@ class dxfGui(QFrame):
                     opts.append('Change Lead-in Angle')
             opts.append('Cancel')
             option = self.show_popup_menu(position, title, opts)#, color)
-            print(f'option; {option}')
+            # print(f'option; {option}')
 
             match option:
                 case 'Change Cut Sequence':
@@ -928,8 +928,8 @@ class dxfGui(QFrame):
                     QTimer.singleShot(100, self.do_plot)
 
                 case 'Set As Start Point':
-                    print(0, layer, cut, segment)
-                    print(f'position: {position} {position.x()} {position.y()}')
+                    # print(0, layer, cut, segment)
+                    # print(f'position: {position} {position.x()} {position.y()}')
                     # self.selected_item = ''
                     # self.D2P.change_start_segment(layer, cut, segment, position.x(), position.y())
                     self.change_start_segment(layer, cut, segment, position)

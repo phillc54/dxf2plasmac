@@ -156,8 +156,6 @@ class App(CTk.CTk):
             self.canvas.create_arc(-spot, -spot, spot, spot, start=270, extent=90, fill='white', outline='black', state='disabled')
         # iterate through points
         for layer in self.D2P.layers:
-            if layer in self.D2P.ignored:
-                continue
             for point in self.D2P.sequences[layer]['cut']:
                  # shape was too small to offset
                 print('\n',points[layer][point])
@@ -939,7 +937,7 @@ class App(CTk.CTk):
         self.prefs_frame.lower()
 
     def toggle_layer(self, layer, widget):
-        ''' toggle vivibility of layer '''
+        ''' toggle visibility of layer '''
         if widget.get():
             self.D2P.ignored.remove(layer)
             state = 'normal'

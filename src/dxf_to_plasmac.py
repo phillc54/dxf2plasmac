@@ -57,6 +57,7 @@ class dxf2PlasmaC:
 
     def _reset(self):
         ''' clear previous file state before loading a new dxf '''
+        print('RESET')
         self.doc = ''
         self.layers = []
         self.paths = {}
