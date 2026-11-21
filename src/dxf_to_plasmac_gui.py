@@ -390,11 +390,9 @@ class dxfGui(QFrame):
                     pen.setCosmetic(True)
                     # rapid segment
                     if segment == 0:
-#                        print(f'segment {segment}   rapid')
                         path = QPainterPath()
                         path.moveTo(x1, y1)
                         path.lineTo(x2, y2)
-                        item = self.scene.addPath(path, pen)
                         # add an arrow to center point
                         xc = (x1 + x2) / 2
                         yc = (y1 + y2) / 2
@@ -404,13 +402,11 @@ class dxfGui(QFrame):
                         ys = yc + l * math.sin(ang + math.radians(150))
                         xe = xc + l * math.cos(ang + math.radians(210))
                         ye = yc + l * math.sin(ang + math.radians(210))
-                        path = QPainterPath()
                         path.moveTo(xs, ys)
                         path.lineTo(xc, yc)
                         path.lineTo(xe, ye)
                     # arc lead-in segment
                     elif segment == 1 and 'cp' in line:
-#                        print(f'segment {segment}   arc lead-in')
                         x = line['cp'][0]
                         y = line['cp'][1] * -1
                         r = line['r']
@@ -421,7 +417,6 @@ class dxfGui(QFrame):
                         path.arcTo(QRectF(x-r, y-r, r*2, r*2), ang, span)
                     # circle
                     elif 'cp' in line:
-#                        print(f'segment {segment}   circle')
                         x = line['cp'][0]
                         y = line['cp'][1] * -1
                         r = line['r']
@@ -429,7 +424,6 @@ class dxfGui(QFrame):
                         path.addEllipse(x-r, y-r, r*2, r*2)
                     # line
                     else:
-#                        print(f'segment {segment}   line')
                         path = QPainterPath()
                         path.moveTo(x1, y1)
                         path.lineTo(x2, y2)
@@ -449,51 +443,6 @@ class dxfGui(QFrame):
                     item.setData(TAG_SEGMENT, str(line['seg']))
                     item.setData(TAG_TYPE, seg_type)
                     item.setData(TAG_COLOR, QColor(color).name())
-
-
-#*********************************************************************************************************
-# single segment doesn't work because we cannot reliably select a specific point...
-                    # # shape and cut segments
-                    # elif segment == 2:
-                    #     # circle, there are no more segments
-                    #     if 'cp' in line:
-                    #         x = line['cp'][0]
-                    #         y = line['cp'][1] * -1
-                    #         r = line['r']
-                    #         path = QPainterPath()
-                    #         path.addEllipse(x-r, y-r, r*2, r*2)
-                    #         item = OutlineCutPath(path, self.cross_marker) if mode == 'cut' else OutlinePath(path)
-                    #         item.setPen(pen)
-                    #         if mode == 'cut':
-                    #             item.setFlag(QGraphicsItem.ItemIsSelectable, True)
-                    #         self.scene.addItem(item)
-                    #     # line, this is the start
-                    #     else:
-                    #         path = QPainterPath()
-                    #         path.moveTo(x1, y1)
-                    #         path.lineTo(x2, y2)
-                    # # remaingin segments except last
-                    # elif segment < len(points[layer][point])-1:
-                    #     path.lineTo(x2, y2)
-                    # # last line segment
-                    # if segment == len(points[layer][point])-1 and segment > 3:
-                    #     path.lineTo(x2, y2)
-                    #     item = OutlineCutPath(path, self.cross_marker) if mode == 'cut' else OutlinePath(path)
-                    #     item.setPen(pen)
-                    #     if mode == 'cut':
-                    #         item.setFlag(QGraphicsItem.ItemIsSelectable, True)
-                    #     self.scene.addItem(item)
-                    # # segments 0, 1, and last segment require tags
-                    # if segment < 2 or segment == len(points[layer][point])-1:
-                    #     item.setData(TAG_LAYER, layer)
-                    #     item.setData(TAG_MODE, mode)
-                    #     item.setData(TAG_SEQUENCE, str(seq))
-                    #     item.setData(TAG_SEGMENT, str(line['seg']))
-                    #     item.setData(TAG_TYPE, seg_type)
-                    #     item.setData(TAG_COLOR, QColor(color).name())
-#*********************************************************************************************************
-
-
                 seq += 1
         if mode == 'cut':
             if not self.show_rapids.isChecked():
@@ -503,6 +452,7 @@ class dxfGui(QFrame):
 
     def hide_paths_by_tag(self, tag, target, visible):
         ''' show/hide paths by tag '''
+        print(f'HIDE: tag:{tag}   target:{target}   vis:{visible}')
         if not self.scene:
             return
         for item in self.scene.items():
